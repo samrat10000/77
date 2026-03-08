@@ -2,7 +2,20 @@ import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
 import { Server } from 'socket.io';
-import { PlaybackState, JamSessionState } from '../src/features/jam/types';
+export interface PlaybackState {
+  trackIndex: number;
+  isPlaying: boolean;
+  progress: number;
+}
+
+export interface JamSessionState {
+  hostId: string;
+  participants: string[];
+  trackIndex: number;
+  isPlaying: boolean;
+  progress: number;
+  lastUpdated: number;
+}
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
