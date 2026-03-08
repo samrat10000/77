@@ -25,7 +25,10 @@ class SocketClient {
 
   public connect() {
     if (!this.socket) {
-      this.socket = io(this.getUrl());
+      this.socket = io(this.getUrl(), {
+        transports: ['websocket'], // Force websocket to avoid 308 polling redirects
+        upgrade: false
+      });
       
       this.socket.on('connect', () => {
         console.log('✅ Connected to socket server at:', this.getUrl(), 'Socket ID:', this.socket?.id);

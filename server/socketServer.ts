@@ -8,10 +8,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["https://seven7-1-4xpg.onrender.com", "http://localhost:3000"],
+    origin: "*", // Totally permissive for production debugging
     methods: ["GET", "POST"],
     credentials: true
   },
+  transports: ['websocket'], // Force websocket
   allowEIO3: true
 });
 
