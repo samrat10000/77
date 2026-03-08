@@ -3,6 +3,7 @@ services:
   - type: web
     name: backend-service
     env: node
+    plan: free # <--- Explicitly request free tier
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
@@ -15,6 +16,7 @@ services:
   - type: web
     name: frontend-service
     env: node
+    plan: free # <--- Explicitly request free tier
     rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npm start
