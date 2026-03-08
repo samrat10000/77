@@ -4,14 +4,11 @@ class SocketClient {
   private static instance: SocketClient;
   public socket: Socket | null = null;
   private getUrl() {
-    let url = '';
+    // With a unified server, we just connect to the current origin (same port)
     if (typeof window !== 'undefined') {
-      url = process.env.NEXT_PUBLIC_SOCKET_URL || `http://${window.location.hostname}:3001`;
-    } else {
-      url = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+      return window.location.origin;
     }
-    // Remove trailing slash to prevent 308 redirects
-    return url.replace(/\/$/, "");
+    return 'http://localhost:3000';
   }
 
   private constructor() {}
