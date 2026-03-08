@@ -8,9 +8,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // Allow all origins for local network testing
-    methods: ["GET", "POST"]
-  }
+    origin: ["https://seven7-1-4xpg.onrender.com", "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  allowEIO3: true
 });
 
 const sessions: Record<string, JamSessionState> = {};

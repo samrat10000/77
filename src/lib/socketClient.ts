@@ -4,10 +4,14 @@ class SocketClient {
   private static instance: SocketClient;
   public socket: Socket | null = null;
   private getUrl() {
+    let url = '';
     if (typeof window !== 'undefined') {
-      return process.env.NEXT_PUBLIC_SOCKET_URL || `http://${window.location.hostname}:3001`;
+      url = process.env.NEXT_PUBLIC_SOCKET_URL || `http://${window.location.hostname}:3001`;
+    } else {
+      url = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     }
-    return process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    // Remove trailing slash to prevent 308 redirects
+    return url.replace(/\/$/, "");
   }
 
   private constructor() {}
