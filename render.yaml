@@ -19,7 +19,6 @@ services:
   - type: web
     name: jam-session-frontend
     env: static
-    plan: free # <--- FREE TIER
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
