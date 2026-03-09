@@ -9,7 +9,9 @@ import { nextTrack } from "@/features/playlist/playlistSlice";
 
 export const useAudioPlayer = () => {
   const dispatch = useAppDispatch();
-  const { isPlaying, volume } = useAppSelector((state) => state.player);
+  const { isPlaying, volume, progress } = useAppSelector(
+    (state) => state.player,
+  );
   const { tracks, currentIndex } = useAppSelector((state) => state.playlist);
 
   const currentTrack = tracks[currentIndex];
@@ -18,12 +20,19 @@ export const useAudioPlayer = () => {
   // When the track changes: update src, load, and auto-play if already playing
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentTrack?.url?.match(/\.(mp3|m4a|ogg|wav)$/i)) return;
+    if (!audio || !currentTrack?.url) return;
 
     audio.pause();
     audio.src = currentTrack.url;
     audio.load();
-    dispatch(setProgress(0));
+
+    // If we just got a progress from network sync (e.g. joined session), start there.
+    // Otherwise, it starts at 0 naturally.
+    if (progress > 0) {
+      audio.currentTime = progress;
+    } else {
+      dispatch(setProgress(0));
+    }
 
     if (isPlaying) {
       const t = setTimeout(() => {
@@ -47,15 +56,19 @@ export const useAudioPlayer = () => {
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          if (err.name !== "AbortError") dispatch(togglePlay());
+          if (err.name !== "AbortError") {
+            console.warn("Autoplay prevented:", err);
+            // We won't automatically togglePlay to avoid overriding the global state just because
+            // of local autoplay blocks, but user will need to interact mechanically.
+          }
         });
       }
     } else {
       audio.pause();
     }
-  }, [isPlaying, volume, dispatch]);
+  }, [isPlaying, volume]);
 
-  // Wire up event listeners — this is what drives the progress bar
+  // Wire up event listeners
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
