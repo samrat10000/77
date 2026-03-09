@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Zap, Users, Share2, LogOut } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Zap, Users, Share2, LogOut, User } from "lucide-react";
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { nextTrack, previousTrack, setCurrentIndex } from '@/features/playlist/playlistSlice';
 import { togglePlay, syncState, setProgress } from '@/features/player/playerSlice';
@@ -7,12 +7,113 @@ import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const BACKEND_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const LS_TOKEN = 'jam_token';
+const LS_USERNAME = 'jam_username';
+const LS_SESSION = 'jam_session_id';
+
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+const getStoredUsername = () => localStorage.getItem(LS_USERNAME) || '';
+const getStoredToken = () => localStorage.getItem(LS_TOKEN) || '';
+
+async function apiAuth(endpoint, body) {
+  const res = await fetch(`${BACKEND_URL}/auth/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ─── Auth Modal ───────────────────────────────────────────────────────────────
+
+function AuthModal({ onSuccess }) {
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const { token, username: name } = await apiAuth(mode, { username, password });
+      localStorage.setItem(LS_TOKEN, token);
+      localStorage.setItem(LS_USERNAME, name);
+      onSuccess(name);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
+      <div className="w-full max-w-xs p-8 flex flex-col space-y-6">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-zinc-900 rounded-full flex items-center justify-center">
+            <User className="w-4 h-4 text-white" />
+          </div>
+          <h1 className="text-lg font-bold text-zinc-900 tracking-tight">
+            {mode === 'login' ? 'Welcome back' : 'Create account'}
+          </h1>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col space-y-3">
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl text-sm border border-zinc-200 bg-zinc-50 text-zinc-900 focus:ring-1 focus:ring-zinc-400 focus:outline-none"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl text-sm border border-zinc-200 bg-zinc-50 text-zinc-900 focus:ring-1 focus:ring-zinc-400 focus:outline-none"
+            required
+          />
+          {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 rounded-xl bg-zinc-900 text-white font-semibold text-sm hover:bg-zinc-700 transition-all disabled:opacity-50"
+          >
+            {loading ? '...' : mode === 'login' ? 'Sign in' : 'Register'}
+          </button>
+        </form>
+
+        <button
+          onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
+          className="text-[11px] text-zinc-400 hover:text-zinc-700 transition-colors text-center"
+        >
+          {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
 export default function App() {
   const dispatch = useAppDispatch();
   const { tracks, currentIndex } = useAppSelector((state) => state.playlist);
   const { isPlaying, progress, duration } = useAppSelector((state) => state.player);
   const { sessionId, isHost, participants, isJoined } = useAppSelector((state) => state.jam);
 
+  const [username, setUsername] = useState(getStoredUsername);
   const [isTripMode, setIsTripMode] = useState(false);
   const [bgIndex, setBgIndex] = useState(1);
   const [joinId, setJoinId] = useState('');
@@ -23,67 +124,67 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const progressBarRef = useRef(null);
 
+  // ── Seek ──────────────────────────────────────────────────────────────────
+
   const handleSeek = useCallback((e) => {
     if (!progressBarRef.current || !duration) return;
-    
     const rect = progressBarRef.current.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     seek(pos * duration);
   }, [duration, seek]);
 
-  const handleMouseDown = (e) => {
-    setIsDragging(true);
-    handleSeek(e);
-  };
-
-  const handleTouchStart = (e) => {
-    setIsDragging(true);
-    handleSeek(e);
-  };
+  const handleMouseDown = (e) => { setIsDragging(true); handleSeek(e); };
+  const handleTouchStart = (e) => { setIsDragging(true); handleSeek(e); };
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (isDragging) handleSeek(e);
-    };
-    const handleTouchMove = (e) => {
-      if (isDragging) handleSeek(e);
-    };
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-    const handleTouchEnd = () => {
-      setIsDragging(false);
-    };
-
+    const onMove = (e) => { if (isDragging) handleSeek(e); };
+    const onUp = () => setIsDragging(false);
     if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      window.addEventListener('touchmove', handleTouchMove);
-      window.addEventListener('touchend', handleTouchEnd);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove);
+      window.addEventListener('touchend', onUp);
     }
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
     };
   }, [isDragging, handleSeek]);
 
-  // --- SOCKET LOGIC ---
+  // ── Socket / Jam ──────────────────────────────────────────────────────────
+
   useEffect(() => {
+    if (!username) return; // wait until logged in
+
     const socket = socketClient.connect();
 
-    socket.on('session-created', ({ sessionId }) => {
-      dispatch(setSessionId(sessionId));
+    socket.on('session-created', ({ sessionId: id }) => {
+      dispatch(setSessionId(id));
       dispatch(setIsHost(true));
+      localStorage.setItem(LS_SESSION, id);
     });
 
-    socket.on('joined-session', ({ sessionId, state }) => {
-      dispatch(setSessionId(sessionId));
+    socket.on('joined-session', ({ sessionId: id, state }) => {
+      dispatch(setSessionId(id));
       dispatch(setIsHost(false));
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
+      localStorage.setItem(LS_SESSION, id);
+    });
+
+    // Auto-rejoin after page refresh
+    socket.on('rejoined-session', ({ sessionId: id, state }) => {
+      dispatch(setSessionId(id));
+      dispatch(setIsHost(state.hostId === socket.id));
+      dispatch(setCurrentIndex(state.trackIndex));
+      dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
+    });
+
+    socket.on('session-expired', () => {
+      localStorage.removeItem(LS_SESSION);
     });
 
     socket.on('participants-update', (users) => {
@@ -101,85 +202,90 @@ export default function App() {
       }
     });
 
-    return () => {
-      socketClient.disconnect();
-    };
-  }, [dispatch, isHost, audioRef]);
+    // Auto-rejoin saved jam session on mount
+    const savedSession = localStorage.getItem(LS_SESSION);
+    if (savedSession) {
+      socket.emit('rejoin-session', { sessionId: savedSession, username });
+    }
 
-  // Sync state to others if host
+    return () => { socketClient.disconnect(); };
+  }, [dispatch, isHost, audioRef, username]);
+
+  // ── Host playback sync ────────────────────────────────────────────────────
+
   useEffect(() => {
     if (isHost && sessionId) {
       socketClient.emit('playback-sync', {
         sessionId,
-        state: {
-          trackIndex: currentIndex,
-          isPlaying,
-          progress
-        }
+        state: { trackIndex: currentIndex, isPlaying, progress }
       });
     }
   }, [isHost, sessionId, currentIndex, isPlaying, progress]);
 
-  // Background rotation for Trip Mode
+  // ── Trip Mode ─────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let interval;
     if (isTripMode) {
-      interval = setInterval(() => {
-        setBgIndex((prev) => (prev % 5) + 1);
-      }, 200);
+      interval = setInterval(() => setBgIndex((prev) => (prev % 5) + 1), 200);
     }
     return () => clearInterval(interval);
   }, [isTripMode]);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
-    const remaining = Math.floor(secs % 60);
-    return `${mins}:${remaining.toString().padStart(2, '0')}`;
+    const rem = Math.floor(secs % 60);
+    return `${mins}:${rem.toString().padStart(2, '0')}`;
   };
 
-  const toggleTripMode = () => setIsTripMode(!isTripMode);
+  const handleCreateSession = () => socketClient.emit('create-session', { username });
 
-  const handleCreateSession = () => socketClient.emit('create-session', {});
   const handleJoinSession = (e) => {
     e.preventDefault();
-    if (joinId.trim()) socketClient.emit('join-session', joinId.trim());
+    if (joinId.trim()) socketClient.emit('join-session', { sessionId: joinId.trim(), username });
   };
+
   const handleLeaveSession = () => {
     dispatch(leaveSession());
+    localStorage.removeItem(LS_SESSION);
     socketClient.disconnect();
   };
 
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+
+  if (!username || !getStoredToken()) {
+    return <AuthModal onSuccess={(name) => setUsername(name)} />;
+  }
+
   if (!currentTrack) return null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-between p-8 md:p-12 font-sans selection:bg-zinc-200 overflow-hidden">
-      {/* Background Layer for Trip Mode */}
+
+      {/* Trip Mode Background */}
       {isTripMode && (
-        <div 
+        <div
           className="absolute inset-0 z-0 transition-none"
           style={{
             backgroundImage: `url('/trip/bg${bgIndex}.jpg')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
           }}
         />
       )}
-
-      {/* Overlay for Trip Mode */}
-      {isTripMode && (
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10" />
-      )}
+      {isTripMode && <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10" />}
 
       {/* Hidden Audio Element */}
       <audio ref={audioRef} crossOrigin="anonymous" />
 
-
-      {/* --- CENTER ALBUM / PLAYER SECTION --- */}
+      {/* ── Player Section ── */}
       <section className="relative z-20 w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-500">
 
-
-        {/* Album Art Card */}
+        {/* Album Art */}
         <div className="w-full aspect-square bg-white shadow-xl shadow-black/5 p-4 md:p-5 flex flex-col justify-between">
           <div className="w-full h-full bg-zinc-100 flex items-center justify-center overflow-hidden relative">
             {currentTrack.albumArt ? (
@@ -191,7 +297,6 @@ export default function App() {
             ) : (
               <div className="w-32 h-32 md:w-48 md:h-48 bg-blue-600 rounded-full blur-xl opacity-80 mix-blend-multiply animate-pulse" />
             )}
-
           </div>
           <div className="flex justify-between items-center text-[9px] text-zinc-400 uppercase tracking-widest mt-4 truncate">
             <span className="truncate pr-2">{currentTrack.artist}</span>
@@ -212,7 +317,7 @@ export default function App() {
 
           {/* Progress Bar */}
           <div className="w-full space-y-3 select-none">
-            <div 
+            <div
               ref={progressBarRef}
               className="w-full relative cursor-pointer group py-3 flex items-center"
               onMouseDown={handleMouseDown}
@@ -235,7 +340,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Controls */}
+          {/* Playback Controls */}
           <div className="flex items-center justify-between mt-6 px-2">
             <button className="text-zinc-400 hover:text-zinc-800 transition-colors">
               <Shuffle className="w-4 h-4" />
@@ -258,12 +363,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* Trip Mode Toggle Button */}
+        {/* Trip Mode Button */}
         <button
-          onClick={toggleTripMode}
+          onClick={() => setIsTripMode(!isTripMode)}
           className={`flex items-center space-x-2 px-6 py-2 rounded-full border transition-all duration-300 group ${
-            isTripMode 
-              ? 'bg-white/20 border-white/40 text-white hover:bg-white/30' 
+            isTripMode
+              ? 'bg-white/20 border-white/40 text-white hover:bg-white/30'
               : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:border-zinc-300'
           }`}
         >
@@ -271,7 +376,7 @@ export default function App() {
           <span className="text-[10px] font-bold tracking-widest uppercase">Trip Mode</span>
         </button>
 
-        {/* --- JAM SESSION UI --- */}
+        {/* ── Jam Session UI ── */}
         <div className={`w-full pt-6 border-t ${isTripMode ? 'border-white/10' : 'border-zinc-100'}`}>
           {!isJoined ? (
             <div className="space-y-4">
@@ -282,7 +387,7 @@ export default function App() {
                 <Users className="w-4 h-4" />
                 <span>Start Jam Session</span>
               </button>
-              
+
               <form onSubmit={handleJoinSession} className="relative">
                 <input
                   type="text"
@@ -290,8 +395,8 @@ export default function App() {
                   value={joinId}
                   onChange={(e) => setJoinId(e.target.value)}
                   className={`w-full px-4 py-3 rounded-xl text-sm border focus:ring-1 focus:outline-none transition-all ${
-                    isTripMode 
-                      ? 'bg-white/5 border-white/10 text-white focus:ring-white/30 placeholder:text-zinc-500' 
+                    isTripMode
+                      ? 'bg-white/5 border-white/10 text-white focus:ring-white/30 placeholder:text-zinc-500'
                       : 'bg-zinc-50 border-zinc-200 text-zinc-900 focus:ring-zinc-400 placeholder:text-zinc-400'
                   }`}
                 />
@@ -305,9 +410,8 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className={`p-4 rounded-xl border flex flex-col space-y-3 ${
-                isTripMode ? 'bg-white/5 border-white/10' : 'bg-zinc-50 border-zinc-200'
-              }`}>
+              <div className={`p-4 rounded-xl border flex flex-col space-y-3 ${isTripMode ? 'bg-white/5 border-white/10' : 'bg-zinc-50 border-zinc-200'}`}>
+                {/* Session header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -315,7 +419,7 @@ export default function App() {
                       {isHost ? 'Hosting Jam' : 'Joined Jam'}
                     </span>
                   </div>
-                  <button 
+                  <button
                     onClick={handleLeaveSession}
                     className="p-1 rounded-md hover:bg-red-500/10 text-red-500 transition-all"
                     title="Leave Session"
@@ -324,30 +428,30 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* Session code */}
                 <div className="flex items-center justify-between">
                   <code className={`text-xs font-mono font-bold ${isTripMode ? 'text-zinc-300' : 'text-zinc-600'}`}>
                     {sessionId}
                   </code>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(sessionId || '');
-                    }}
-                    className={`flex items-center space-x-1 px-2 py-1 rounded bg-zinc-900 text-[9px] text-white font-bold uppercase hover:bg-zinc-800`}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(sessionId || '')}
+                    className="flex items-center space-x-1 px-2 py-1 rounded bg-zinc-900 text-[9px] text-white font-bold uppercase hover:bg-zinc-800"
                   >
                     <Share2 className="w-3 h-3" />
-                    <span>Copy Link</span>
+                    <span>Copy</span>
                   </button>
                 </div>
 
+                {/* Participant avatars — now showing real usernames */}
                 <div className="flex items-center -space-x-2">
-                  {participants.map((p, i) => (
-                    <div 
-                      key={p} 
-                      className="w-6 h-6 rounded-full border-2 border-zinc-50 bg-zinc-200 flex items-center justify-center text-[10px] font-bold text-zinc-600 shadow-sm"
-                      title={p}
+                  {participants.slice(0, 5).map((p, i) => (
+                    <div
+                      key={p.socketId}
+                      className="w-7 h-7 rounded-full border-2 border-zinc-50 bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                      title={p.username}
                       style={{ zIndex: participants.length - i }}
                     >
-                      {p.substring(0, 1).toUpperCase()}
+                      {p.username?.[0]?.toUpperCase() ?? '?'}
                     </div>
                   ))}
                   {participants.length > 5 && (
@@ -362,7 +466,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* --- BOTTOM LYRICS / QUOTE --- */}
+      {/* Lyrics footer */}
       <footer className="relative z-10 w-full max-w-sm text-center mt-12 md:mt-24 mb-8">
         <p className="text-sm leading-relaxed font-serif italic text-zinc-600">
           {currentTrack.quote?.split('\n').map((line, i) => (

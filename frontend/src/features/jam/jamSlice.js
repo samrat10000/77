@@ -3,7 +3,7 @@ import { createSlice } from "@reduxjs/toolkit";
 const initialState = {
   sessionId: null,
   isHost: false,
-  participants: [],
+  participants: [], // [{ socketId, username }]
   isJoined: false,
   error: null,
 };
