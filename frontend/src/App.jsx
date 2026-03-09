@@ -6,7 +6,7 @@ import { syncState, setProgress } from '@/features/player/playerSlice';
 import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { getStoredUsername, getStoredToken, LS_SESSION } from '@/lib/auth';
 import { AuthModal } from '@/components/auth/AuthModal';
@@ -285,7 +285,7 @@ export default function App() {
       {!isTripMode && (
         <button
           onClick={() => setIsDarkMode(!isDarkMode)}
-          className={`fixed top-5 right-5 z-50 p-2.5 rounded-full border shadow-sm transition-all duration-300 hover:scale-110 active:scale-95 ${
+          className={`fixed top-5 left-5 z-50 p-2.5 rounded-full border shadow-sm transition-all duration-300 hover:scale-110 active:scale-95 ${
             isDarkMode
               ? 'bg-zinc-800 border-zinc-700 text-zinc-100 hover:bg-zinc-700'
               : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'
