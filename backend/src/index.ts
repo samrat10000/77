@@ -96,6 +96,12 @@ app.post('/auth/register', async (req, res) => {
     return;
   }
   try {
+    // Ensure we don't try to query if DB isn't ready
+    if (mongoose.connection.readyState !== 1 && MONGO_URI) {
+      console.log('⏳ Waiting for DB connection...');
+      await mongoose.connect(MONGO_URI);
+    }
+
     const existing = await User.findOne({ username });
     if (existing) {
       res.status(409).json({ error: 'Username already taken' });
@@ -106,13 +112,18 @@ app.post('/auth/register', async (req, res) => {
     const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, username });
   } catch (err) {
-    res.status(500).json({ error: 'Server error during registration' });
+    console.error('❌ Registration Error:', err);
+    res.status(500).json({ error: 'Server error during registration', details: err instanceof Error ? err.message : String(err) });
   }
 });
 
 app.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
   try {
+    if (mongoose.connection.readyState !== 1 && MONGO_URI) {
+      await mongoose.connect(MONGO_URI);
+    }
+
     const user = await User.findOne({ username });
     if (!user) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -126,7 +137,8 @@ app.post('/auth/login', async (req, res) => {
     const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username });
   } catch (err) {
-    res.status(500).json({ error: 'Server error during login' });
+    console.error('❌ Login Error:', err);
+    res.status(500).json({ error: 'Server error during login', details: err instanceof Error ? err.message : String(err) });
   }
 });
 
