@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, MessageSquare } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { setCurrentIndex } from '@/features/playlist/playlistSlice';
 import { syncState, setProgress } from '@/features/player/playerSlice';
