@@ -178,7 +178,7 @@ export default function App() {
     // Auto-rejoin after page refresh
     socket.on('rejoined-session', ({ sessionId: id, state }) => {
       dispatch(setSessionId(id));
-      dispatch(setIsHost(state.hostId === socket.id));
+      dispatch(setIsHost(state.hostUsername === username));
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
     });
@@ -208,7 +208,14 @@ export default function App() {
       socket.emit('rejoin-session', { sessionId: savedSession, username });
     }
 
-    return () => { socketClient.disconnect(); };
+    return () => { 
+      socket.off('session-created');
+      socket.off('joined-session');
+      socket.off('rejoined-session');
+      socket.off('session-expired');
+      socket.off('participants-update');
+      socket.off('playback-update');
+    };
   }, [dispatch, isHost, audioRef, username]);
 
   // ── Host playback sync ────────────────────────────────────────────────────

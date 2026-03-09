@@ -54,7 +54,7 @@ export interface PlaybackState {
 }
 
 export interface JamSessionState {
-  hostId: string;
+  hostUsername: string;
   participants: Participant[];
   trackIndex: number;
   isPlaying: boolean;
@@ -151,7 +151,7 @@ io.on('connection', (socket) => {
     const sessionId = Math.random().toString(36).substring(2, 8).toUpperCase();
     const participant: Participant = { socketId: socket.id, username };
     sessions[sessionId] = {
-      hostId: socket.id,
+      hostUsername: username,
       participants: [participant],
       trackIndex: 0,
       isPlaying: false,
@@ -166,13 +166,17 @@ io.on('connection', (socket) => {
 
   const addToSession = (sessionId: string, username: string) => {
     socket.join(sessionId);
-    const existing = sessions[sessionId].participants.find(p => p.socketId === socket.id);
-    if (!existing) {
-      sessions[sessionId].participants.push({ socketId: socket.id, username });
+    const session = sessions[sessionId];
+    const existingIndex = session.participants.findIndex(p => p.username === username);
+    
+    if (existingIndex > -1) {
+      // Update socket ID for existing username (reconnect)
+      session.participants[existingIndex].socketId = socket.id;
     } else {
-      existing.username = username; // refresh name in case of rejoin
+      session.participants.push({ socketId: socket.id, username });
     }
-    io.to(sessionId).emit('participants-update', sessions[sessionId].participants);
+    
+    io.to(sessionId).emit('participants-update', session.participants);
   };
 
   socket.on('join-session', ({ sessionId, username }: { sessionId: string; username: string }) => {

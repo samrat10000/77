@@ -17,37 +17,28 @@ class SocketClient {
   }
 
   connect() {
-    if (!this.socket) {
-      this.socket = io(this.getUrl(), {
-        transports: ["websocket"],
-        upgrade: false,
-      });
+    if (!this.socket || !this.socket.connected) {
+      if (!this.socket) {
+        this.socket = io(this.getUrl(), {
+          transports: ["websocket"],
+          autoConnect: true,
+          reconnection: true,
+        });
 
-      this.socket.on("connect", () => {
-        console.log(
-          "✅ Connected to socket server at:",
-          this.getUrl(),
-          "Socket ID:",
-          this.socket?.id,
-        );
-      });
+        this.socket.on("connect", () => {
+          console.log("✅ Socket connected:", this.socket.id);
+        });
 
-      this.socket.on("disconnect", (reason) => {
-        console.log("❌ Disconnected from socket server. Reason:", reason);
-      });
+        this.socket.on("disconnect", (reason) => {
+          console.log("❌ Socket disconnected:", reason);
+        });
 
-      this.socket.on("connect_error", (err) => {
-        console.error(
-          "⚠️ Socket Connection Error to",
-          this.getUrl(),
-          ":",
-          err.message,
-        );
-      });
-
-      this.socket.on("error", (err) => {
-        console.error("🛑 Socket internal error:", err);
-      });
+        this.socket.on("connect_error", (err) => {
+          console.error("⚠️ Socket error:", err.message);
+        });
+      } else {
+        this.socket.connect();
+      }
     }
     return this.socket;
   }
@@ -55,12 +46,18 @@ class SocketClient {
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
-      this.socket = null;
+      // Keep instance but disconnected
     }
   }
 
   emit(event, data) {
-    this.socket?.emit(event, data);
+    if (this.socket && this.socket.connected) {
+      this.socket.emit(event, data);
+    } else if (this.socket) {
+      // Queue or wait for connect if absolutely necessary,
+      // but for now just log and rely on socket.io's internal buffering if possible
+      this.socket.emit(event, data);
+    }
   }
 
   on(event, callback) {
