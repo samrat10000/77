@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Zap, Users, Share2, LogOut } from "lucide-react";
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
@@ -8,9 +6,8 @@ import { togglePlay, syncState, setProgress } from '@/features/player/playerSlic
 import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
-import { JamSessionState, PlaybackState } from '@/features/jam/types';
 
-export default function Home() {
+export default function App() {
   const dispatch = useAppDispatch();
   const { tracks, currentIndex } = useAppSelector((state) => state.playlist);
   const { isPlaying, progress, duration } = useAppSelector((state) => state.player);
@@ -24,32 +21,32 @@ export default function Home() {
   const { audioRef, seek } = useAudioPlayer();
 
   const [isDragging, setIsDragging] = useState(false);
-  const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressBarRef = useRef(null);
 
-  const handleSeek = useCallback((e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
+  const handleSeek = useCallback((e) => {
     if (!progressBarRef.current || !duration) return;
     
     const rect = progressBarRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     seek(pos * duration);
   }, [duration, seek]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = (e) => {
     setIsDragging(true);
     handleSeek(e);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = (e) => {
     setIsDragging(true);
     handleSeek(e);
   };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (e) => {
       if (isDragging) handleSeek(e);
     };
-    const handleTouchMove = (e: TouchEvent) => {
+    const handleTouchMove = (e) => {
       if (isDragging) handleSeek(e);
     };
     const handleMouseUp = () => {
@@ -77,23 +74,23 @@ export default function Home() {
   useEffect(() => {
     const socket = socketClient.connect();
 
-    socket.on('session-created', ({ sessionId }: { sessionId: string }) => {
+    socket.on('session-created', ({ sessionId }) => {
       dispatch(setSessionId(sessionId));
       dispatch(setIsHost(true));
     });
 
-    socket.on('joined-session', ({ sessionId, state }: { sessionId: string, state: JamSessionState }) => {
+    socket.on('joined-session', ({ sessionId, state }) => {
       dispatch(setSessionId(sessionId));
       dispatch(setIsHost(false));
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
     });
 
-    socket.on('participants-update', (users: string[]) => {
+    socket.on('participants-update', (users) => {
       dispatch(setParticipants(users));
     });
 
-    socket.on('playback-update', (state: Partial<PlaybackState>) => {
+    socket.on('playback-update', (state) => {
       if (!isHost) {
         if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
         if (state.isPlaying !== undefined) dispatch(syncState({ isPlaying: state.isPlaying }));
@@ -125,7 +122,7 @@ export default function Home() {
 
   // Background rotation for Trip Mode
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval;
     if (isTripMode) {
       interval = setInterval(() => {
         setBgIndex((prev) => (prev % 5) + 1);
@@ -134,7 +131,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isTripMode]);
 
-  const formatTime = (secs: number) => {
+  const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
     const remaining = Math.floor(secs % 60);
     return `${mins}:${remaining.toString().padStart(2, '0')}`;
@@ -143,7 +140,7 @@ export default function Home() {
   const toggleTripMode = () => setIsTripMode(!isTripMode);
 
   const handleCreateSession = () => socketClient.emit('create-session', {});
-  const handleJoinSession = (e: React.FormEvent) => {
+  const handleJoinSession = (e) => {
     e.preventDefault();
     if (joinId.trim()) socketClient.emit('join-session', joinId.trim());
   };
@@ -186,7 +183,6 @@ export default function Home() {
         <div className="w-full aspect-square bg-white shadow-xl shadow-black/5 p-4 md:p-5 flex flex-col justify-between">
           <div className="w-full h-full bg-zinc-100 flex items-center justify-center overflow-hidden relative">
             {currentTrack.albumArt ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={currentTrack.albumArt}
                 alt={currentTrack.title}
@@ -377,4 +373,3 @@ export default function Home() {
     </main>
   );
 }
-

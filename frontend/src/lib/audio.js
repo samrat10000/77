@@ -1,7 +1,11 @@
-import { useEffect, useRef } from 'react';
-import { useAppDispatch, useAppSelector } from './hooks';
-import { setProgress, setDuration, togglePlay } from '@/features/player/playerSlice';
-import { nextTrack } from '@/features/playlist/playlistSlice';
+import { useEffect, useRef } from "react";
+import { useAppDispatch, useAppSelector } from "./hooks";
+import {
+  setProgress,
+  setDuration,
+  togglePlay,
+} from "@/features/player/playerSlice";
+import { nextTrack } from "@/features/playlist/playlistSlice";
 
 export const useAudioPlayer = () => {
   const dispatch = useAppDispatch();
@@ -9,7 +13,7 @@ export const useAudioPlayer = () => {
   const { tracks, currentIndex } = useAppSelector((state) => state.playlist);
 
   const currentTrack = tracks[currentIndex];
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef(null);
 
   // When the track changes: update src, load, and auto-play if already playing
   useEffect(() => {
@@ -23,13 +27,13 @@ export const useAudioPlayer = () => {
 
     if (isPlaying) {
       const t = setTimeout(() => {
-        audio.play().catch((err: Error) => {
-          if (err.name !== 'AbortError') dispatch(togglePlay());
+        audio.play().catch((err) => {
+          if (err.name !== "AbortError") dispatch(togglePlay());
         });
       }, 50);
       return () => clearTimeout(t);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack]);
 
   // Sync play/pause
@@ -42,8 +46,8 @@ export const useAudioPlayer = () => {
     if (isPlaying) {
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err: Error) => {
-          if (err.name !== 'AbortError') dispatch(togglePlay());
+        playPromise.catch((err) => {
+          if (err.name !== "AbortError") dispatch(togglePlay());
         });
       }
     } else {
@@ -69,18 +73,18 @@ export const useAudioPlayer = () => {
       dispatch(nextTrack());
     };
 
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('loadedmetadata', onLoadedMetadata);
-    audio.addEventListener('ended', onEnded);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("ended", onEnded);
 
     return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
-      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("ended", onEnded);
     };
   }, [dispatch]);
 
-  const seek = (time: number) => {
+  const seek = (time) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       dispatch(setProgress(time));

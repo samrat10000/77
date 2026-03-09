@@ -1,17 +1,6 @@
-import { PayloadAction, createSlice } from '@reduxjs/toolkit';
-import { Track } from '@/types';
+import { createSlice } from "@reduxjs/toolkit";
 
-interface PlayerState {
-  isPlaying: boolean;
-  currentTrack: Track | null;
-  volume: number;
-  progress: number;
-  duration: number;
-  isShuffle: boolean;
-  isRepeat: boolean;
-}
-
-const initialState: PlayerState = {
+const initialState = {
   isPlaying: false,
   currentTrack: null,
   volume: 1,
@@ -22,7 +11,7 @@ const initialState: PlayerState = {
 };
 
 const playerSlice = createSlice({
-  name: 'player',
+  name: "player",
   initialState,
   reducers: {
     play: (state) => {
@@ -34,16 +23,16 @@ const playerSlice = createSlice({
     togglePlay: (state) => {
       state.isPlaying = !state.isPlaying;
     },
-    setCurrentTrack: (state, action: PayloadAction<Track>) => {
+    setCurrentTrack: (state, action) => {
       state.currentTrack = action.payload;
     },
-    setVolume: (state, action: PayloadAction<number>) => {
+    setVolume: (state, action) => {
       state.volume = action.payload;
     },
-    setProgress: (state, action: PayloadAction<number>) => {
+    setProgress: (state, action) => {
       state.progress = action.payload;
     },
-    setDuration: (state, action: PayloadAction<number>) => {
+    setDuration: (state, action) => {
       state.duration = action.payload;
     },
     toggleShuffle: (state) => {
@@ -52,7 +41,7 @@ const playerSlice = createSlice({
     toggleRepeat: (state) => {
       state.isRepeat = !state.isRepeat;
     },
-    syncState: (state, action: PayloadAction<Partial<PlayerState>>) => {
+    syncState: (state, action) => {
       return { ...state, ...action.payload };
     },
   },

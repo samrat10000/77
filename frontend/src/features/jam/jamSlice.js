@@ -1,14 +1,6 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice } from "@reduxjs/toolkit";
 
-interface JamState {
-  sessionId: string | null;
-  isHost: boolean;
-  participants: string[];
-  isJoined: boolean;
-  error: string | null;
-}
-
-const initialState: JamState = {
+const initialState = {
   sessionId: null,
   isHost: false,
   participants: [],
@@ -17,21 +9,21 @@ const initialState: JamState = {
 };
 
 const jamSlice = createSlice({
-  name: 'jam',
+  name: "jam",
   initialState,
   reducers: {
-    setSessionId: (state, action: PayloadAction<string>) => {
+    setSessionId: (state, action) => {
       state.sessionId = action.payload;
       state.isJoined = true;
       state.error = null;
     },
-    setIsHost: (state, action: PayloadAction<boolean>) => {
+    setIsHost: (state, action) => {
       state.isHost = action.payload;
     },
-    setParticipants: (state, action: PayloadAction<string[]>) => {
+    setParticipants: (state, action) => {
       state.participants = action.payload;
     },
-    setError: (state, action: PayloadAction<string>) => {
+    setError: (state, action) => {
       state.error = action.payload;
     },
     leaveSession: (state) => {
@@ -44,5 +36,11 @@ const jamSlice = createSlice({
   },
 });
 
-export const { setSessionId, setIsHost, setParticipants, setError, leaveSession } = jamSlice.actions;
+export const {
+  setSessionId,
+  setIsHost,
+  setParticipants,
+  setError,
+  leaveSession,
+} = jamSlice.actions;
 export default jamSlice.reducer;
