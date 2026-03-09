@@ -19,6 +19,42 @@ const defaultTracks = [
     duration: 300,
     quote: "I just wanna be more, be more for you.",
   },
+  {
+    id: "PtBwtlGBXV8",
+    title: "Backstreet Girl",
+    artist: "d4vd",
+    albumArt: "/thumbs/PtBwtlGBXV8.webp",
+    url: "/songs/PtBwtlGBXV8.m4a",
+    duration: 249,
+    quote: "Just a backstreet girl in a lonely world.",
+  },
+  {
+    id: "yCgNZ__Eho4",
+    title: "Nazrein",
+    artist: "Gravero & faizal",
+    albumArt: "/thumbs/yCgNZ__Eho4.webp",
+    url: "/songs/yCgNZ__Eho4.m4a",
+    duration: 142,
+    quote: "Nazrein milti hain toh dil dhadakta hai.",
+  },
+  {
+    id: "xx-Xqmmzlk4",
+    title: "The Pool",
+    artist: "Stephen Sanchez",
+    albumArt: "/thumbs/xx-Xqmmzlk4.webp",
+    url: "/songs/xx-Xqmmzlk4.m4a",
+    duration: 291,
+    quote: "I'm jumping in the pool of your love.",
+  },
+  {
+    id: "cVeYZe3pkVo",
+    title: "Panah",
+    artist: "SaiKat | Debjyoti",
+    albumArt: "/thumbs/cVeYZe3pkVo.webp",
+    url: "/songs/cVeYZe3pkVo.m4a",
+    duration: 199,
+    quote: "Tum hi ho meri panah.",
+  },
 ];
 
 const initialState = {
