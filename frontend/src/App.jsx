@@ -37,6 +37,12 @@ export default function App() {
 
   const [isDragging, setIsDragging] = useState(false);
   const progressBarRef = useRef(null);
+
+  // ── Chat & Reactions State ────────────────────────────────────────────────
+  const [messages, setMessages] = useState([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [activeReactions, setActiveReactions] = useState([]);
+
   const isChatOpenRef = useRef(isChatOpen);
 
   useEffect(() => {
@@ -72,12 +78,6 @@ export default function App() {
       window.removeEventListener('touchend', onUp);
     };
   }, [isDragging, handleSeek]);
-
-  // ── Chat & Reactions State ────────────────────────────────────────────────
-  
-  const [messages, setMessages] = useState([]);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [activeReactions, setActiveReactions] = useState([]);
 
   // ── Socket / Jam ──────────────────────────────────────────────────────────
 
