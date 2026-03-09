@@ -123,10 +123,11 @@ export default function App() {
     });
 
     socket.on('chat-message', (msg) => {
+      if (!msg) return;
       setMessages((prev) => [...prev, msg]);
       
       // Show notification if chat is closed and msg is not from system or self
-      if (!isChatOpenRef.current && msg.type === 'user' && msg.username !== username) {
+      if (!isChatOpenRef.current && msg.type === 'user' && msg.username && msg.username !== username) {
         setChatNotification(msg);
         setTimeout(() => setChatNotification(null), 5000);
       }
@@ -141,28 +142,40 @@ export default function App() {
     });
 
     socket.on('playback-update', (state) => {
+      if (!state) return;
       if (!isHost) {
         if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
         if (state.isPlaying !== undefined) dispatch(syncState({ isPlaying: state.isPlaying }));
-        if (state.progress !== undefined) {
+        if (state.progress !== undefined && typeof state.progress === 'number' && !isNaN(state.progress)) {
           dispatch(setProgress(state.progress));
-          if (audioRef.current) audioRef.current.currentTime = state.progress;
+          if (audioRef?.current) {
+            try {
+              audioRef.current.currentTime = state.progress;
+            } catch (e) {
+              console.warn("Failed to sync audio time:", e);
+            }
+          }
         }
       }
     });
 
     // ── Media events (guests only receive) ────────────────────────────────
-    socket.on('media:load', ({ url, type }) => {
-      dispatch(setMedia({ url, type }));
+    socket.on('media:load', (data) => {
+      if (data?.url) dispatch(setMedia(data));
     });
 
-    socket.on('media:sync', ({ time, state }) => {
-      dispatch(setMediaTime(time));
-      dispatch(setMediaState(state));
+    socket.on('media:sync', (data) => {
+      if (!data) return;
+      if (data.time !== undefined && typeof data.time === 'number' && !isNaN(data.time)) {
+        dispatch(setMediaTime(data.time));
+      }
+      if (data.state) dispatch(setMediaState(data.state));
     });
 
-    socket.on('media:seek', ({ time }) => {
-      dispatch(setMediaTime(time));
+    socket.on('media:seek', (data) => {
+      if (data?.time !== undefined && typeof data.time === 'number' && !isNaN(data.time)) {
+        dispatch(setMediaTime(data.time));
+      }
     });
 
     // Auto-rejoin saved jam session on mount
@@ -327,10 +340,10 @@ export default function App() {
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest leading-none mb-1">
-                New Message • {chatNotification.username}
+                New Message • {chatNotification?.username || 'Guest'}
               </span>
               <p className="text-xs font-light truncate">
-                {chatNotification.text}
+                {chatNotification?.text || '...'}
               </p>
             </div>
           </motion.div>

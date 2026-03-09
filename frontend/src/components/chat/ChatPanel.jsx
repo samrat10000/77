@@ -64,6 +64,7 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
         <AnimatePresence initial={false}>
           {messages.map((m, i) => {
+            if (!m) return null;
             const isMe = m.username === username;
             const isSystem = m.type === 'system';
 
@@ -78,7 +79,7 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
                   <span className={`text-[10px] font-mono tracking-wider px-4 py-1.5 rounded-full border ${
                     isTripMode ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500'
                   }`}>
-                    {m.text}
+                    {m.text || '...'}
                   </span>
                 </motion.div>
               );
@@ -93,7 +94,7 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
               >
                 {!isMe && (
                   <span className="text-[10px] font-mono text-zinc-400 mb-2 ml-1">
-                    {m.username}
+                    {m.username || 'Guest'}
                   </span>
                 )}
                 <div 
@@ -103,7 +104,7 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
                       : isTripMode ? 'bg-white/10 text-white rounded-2xl rounded-tl-sm' : 'bg-zinc-100 text-zinc-800 rounded-2xl rounded-tl-sm'
                   }`}
                 >
-                  {m.text}
+                  {m.text || '...'}
                 </div>
               </motion.div>
             );
