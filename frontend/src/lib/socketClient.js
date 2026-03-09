@@ -6,7 +6,7 @@ class SocketClient {
   }
 
   getUrl() {
-    return import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
+    return import.meta.env.VITE_SOCKET_URL || "http://192.168.0.146:3001";
   }
 
   static getInstance() {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Moon, Sun } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { setCurrentIndex } from '@/features/playlist/playlistSlice';
 import { syncState, setProgress } from '@/features/player/playerSlice';
@@ -13,15 +14,20 @@ import { FloatingReaction } from '@/components/chat/FloatingReaction';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PlayerSection } from '@/components/player/PlayerSection';
 import { JamSessionSection } from '@/components/jam/JamSessionSection';
+import { MediaInput } from '@/components/media/MediaInput';
+import { MediaPlayer } from '@/components/media/MediaPlayer';
+import { setMedia, setMediaState, setMediaTime, clearMedia } from '@/features/media/mediaSlice';
 
 export default function App() {
   const dispatch = useAppDispatch();
   const { tracks, currentIndex } = useAppSelector((state) => state.playlist);
   const { isPlaying, progress, duration } = useAppSelector((state) => state.player);
   const { sessionId, isHost, participants, isJoined } = useAppSelector((state) => state.jam);
+  const { url: mediaUrl, type: mediaType, mediaState, mediaTime } = useAppSelector((state) => state.media);
 
   const [username, setUsername] = useState(getStoredUsername);
   const [isTripMode, setIsTripMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [bgIndex, setBgIndex] = useState(1);
   const [joinId, setJoinId] = useState('');
 
@@ -127,6 +133,20 @@ export default function App() {
       }
     });
 
+    // ── Media events (guests only receive) ────────────────────────────────
+    socket.on('media:load', ({ url, type }) => {
+      dispatch(setMedia({ url, type }));
+    });
+
+    socket.on('media:sync', ({ time, state }) => {
+      dispatch(setMediaTime(time));
+      dispatch(setMediaState(state));
+    });
+
+    socket.on('media:seek', ({ time }) => {
+      dispatch(setMediaTime(time));
+    });
+
     // Auto-rejoin saved jam session on mount
     const savedSession = localStorage.getItem(LS_SESSION);
     if (savedSession) {
@@ -142,6 +162,9 @@ export default function App() {
       socket.off('chat-message');
       socket.off('new-reaction');
       socket.off('playback-update');
+      socket.off('media:load');
+      socket.off('media:sync');
+      socket.off('media:seek');
     };
   }, [dispatch, isHost, audioRef, username]);
 
@@ -183,9 +206,16 @@ export default function App() {
 
   const handleLeaveSession = () => {
     dispatch(leaveSession());
+    dispatch(clearMedia());
     localStorage.removeItem(LS_SESSION);
     socketClient.disconnect();
     setMessages([]);
+  };
+
+  const handleMediaLoad = ({ url, type }) => {
+    if (!isHost || !sessionId) return;
+    dispatch(setMedia({ url, type }));
+    socketClient.emit('media:load', { sessionId, url, type });
   };
 
   const handleSendMessage = (text) => {
@@ -211,7 +241,11 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-between p-8 md:p-12 font-sans selection:bg-zinc-200 overflow-hidden">
+    <main className={`relative flex min-h-screen flex-col items-center justify-between p-8 md:p-12 font-sans overflow-hidden transition-colors duration-500 ${
+      isTripMode ? 'selection:bg-white/20' : 'selection:bg-zinc-200'
+    } ${
+      isDarkMode && !isTripMode ? 'bg-zinc-950' : !isTripMode ? 'bg-white' : ''
+    }`}>
 
       {/* Trip Mode Background */}
       {isTripMode && (
@@ -228,6 +262,20 @@ export default function App() {
 
       {/* Hidden Audio Element */}
       <audio ref={audioRef} crossOrigin="anonymous" />
+
+      {/* ── Dark Mode Toggle ── */}
+      {!isTripMode && (
+        <button
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className={`fixed top-5 right-5 z-50 p-2.5 rounded-full border shadow-sm transition-all duration-300 hover:scale-110 active:scale-95 ${
+            isDarkMode
+              ? 'bg-zinc-800 border-zinc-700 text-zinc-100 hover:bg-zinc-700'
+              : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'
+          }`}
+        >
+          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+      )}
 
       {/* ── Floating Reactions Overlay ── */}
       <AnimatePresence>
@@ -269,6 +317,8 @@ export default function App() {
           handleTouchStart={handleTouchStart}
           formatTime={formatTime}
           isPlaying={isPlaying}
+          isTripMode={isTripMode}
+          isDarkMode={isDarkMode}
         />
 
         <JamSessionSection
@@ -285,12 +335,40 @@ export default function App() {
           handleLeaveSession={handleLeaveSession}
           sessionId={sessionId}
           participants={participants}
+          isDarkMode={isDarkMode}
         />
+
+        {/* ── Media Input (host only) ── */}
+        {isJoined && isHost && (
+          <div className={`w-full pt-6 border-t ${isTripMode ? 'border-white/10' : 'border-zinc-100'}`}>
+            <p className={`text-[10px] font-mono uppercase tracking-widest mb-3 ${isTripMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              Load Media for Session
+            </p>
+            <MediaInput onLoad={handleMediaLoad} isTripMode={isTripMode} />
+          </div>
+        )}
+
+        {/* ── Shared Media Player ── */}
+        {mediaUrl && (
+          <div className="w-full">
+            <MediaPlayer
+              url={mediaUrl}
+              type={mediaType}
+              mediaState={mediaState}
+              mediaTime={mediaTime}
+              sessionId={sessionId}
+              isHost={isHost}
+              isTripMode={isTripMode}
+            />
+          </div>
+        )}
       </section>
 
       {/* Lyrics footer */}
       <footer className="relative z-10 w-full max-w-sm text-center mt-12 md:mt-24 mb-8">
-        <p className="text-sm leading-relaxed font-serif italic text-zinc-600">
+        <p className={`text-sm leading-relaxed font-serif italic transition-colors duration-300 ${
+          isTripMode ? 'text-white/50' : isDarkMode ? 'text-zinc-500' : 'text-zinc-600'
+        }`}>
           {currentTrack.quote?.split('\n').map((line, i) => (
             <span key={i}>{line}<br /></span>
           ))}

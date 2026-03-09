@@ -37,7 +37,7 @@ const io = new Server(httpServer, {
 setupJamSessionSockets(io);
 
 // ─── Start ────────────────────────────────────────────────────────────
-httpServer.listen(port, () => {
-  console.log(`> Backend running on http://localhost:${port}`);
+httpServer.listen(port, "0.0.0.0", () => {
+  console.log(`> Backend running on http://0.0.0.0:${port}`);
 });
 

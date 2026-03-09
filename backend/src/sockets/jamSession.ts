@@ -11,6 +11,11 @@ export interface PlaybackState {
   progress: number;
 }
 
+export interface MediaState {
+  url: string | null;
+  type: 'youtube' | 'video' | 'audio' | null;
+}
+
 export interface JamSessionState {
   hostUsername: string;
   participants: Participant[];
@@ -18,6 +23,7 @@ export interface JamSessionState {
   isPlaying: boolean;
   progress: number;
   lastUpdated: number;
+  media: MediaState;
 }
 
 export const setupJamSessionSockets = (io: Server) => {
@@ -35,7 +41,8 @@ export const setupJamSessionSockets = (io: Server) => {
         trackIndex: 0,
         isPlaying: false,
         progress: 0,
-        lastUpdated: Date.now()
+        lastUpdated: Date.now(),
+        media: { url: null, type: null }
       };
       
       socket.join(sessionId);
@@ -109,6 +116,33 @@ export const setupJamSessionSockets = (io: Server) => {
         sessions[sessionId] = { ...sessions[sessionId], ...state, lastUpdated: Date.now() };
         socket.to(sessionId).emit('playback-update', state);
       }
+    });
+
+    // ── Media events (host only) ──────────────────────────────────────────
+
+    socket.on('media:load', ({ sessionId, url, type }: { sessionId: string; url: string; type: 'youtube' | 'video' | 'audio' }) => {
+      const session = sessions[sessionId];
+      if (!session) return;
+      const sender = session.participants.find(p => p.socketId === socket.id);
+      if (!sender || sender.username !== session.hostUsername) return; // host only
+      session.media = { url, type };
+      io.to(sessionId).emit('media:load', { url, type });
+    });
+
+    socket.on('media:sync', ({ sessionId, time, state }: { sessionId: string; time: number; state: 'playing' | 'paused' }) => {
+      const session = sessions[sessionId];
+      if (!session) return;
+      const sender = session.participants.find(p => p.socketId === socket.id);
+      if (!sender || sender.username !== session.hostUsername) return;
+      socket.to(sessionId).emit('media:sync', { time, state });
+    });
+
+    socket.on('media:seek', ({ sessionId, time }: { sessionId: string; time: number }) => {
+      const session = sessions[sessionId];
+      if (!session) return;
+      const sender = session.participants.find(p => p.socketId === socket.id);
+      if (!sender || sender.username !== session.hostUsername) return;
+      socket.to(sessionId).emit('media:seek', { time });
     });
 
     socket.on('disconnect', () => {
