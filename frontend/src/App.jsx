@@ -30,12 +30,18 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [bgIndex, setBgIndex] = useState(1);
   const [joinId, setJoinId] = useState('');
+  const [chatNotification, setChatNotification] = useState(null);
 
   const currentTrack = tracks[currentIndex];
   const { audioRef, seek } = useAudioPlayer();
 
   const [isDragging, setIsDragging] = useState(false);
   const progressBarRef = useRef(null);
+  const isChatOpenRef = useRef(isChatOpen);
+
+  useEffect(() => {
+    isChatOpenRef.current = isChatOpen;
+  }, [isChatOpen]);
 
   // ── Seek ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +97,9 @@ export default function App() {
       dispatch(setIsHost(false));
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
+      if (state.media?.url) {
+        dispatch(setMedia(state.media));
+      }
       localStorage.setItem(LS_SESSION, id);
     });
 
@@ -100,6 +109,9 @@ export default function App() {
       dispatch(setIsHost(state.hostUsername === username));
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
+      if (state.media?.url) {
+        dispatch(setMedia(state.media));
+      }
     });
 
     socket.on('session-expired', () => {
@@ -112,6 +124,12 @@ export default function App() {
 
     socket.on('chat-message', (msg) => {
       setMessages((prev) => [...prev, msg]);
+      
+      // Show notification if chat is closed and msg is not from system or self
+      if (!isChatOpenRef.current && msg.type === 'user' && msg.username !== username) {
+        setChatNotification(msg);
+        setTimeout(() => setChatNotification(null), 5000);
+      }
     });
 
     socket.on('new-reaction', (reaction) => {
@@ -288,6 +306,35 @@ export default function App() {
             onComplete={() => setActiveReactions((prev) => prev.filter((item) => item.id !== r.id))}
           />
         ))}
+      </AnimatePresence>
+
+      {/* ── Chat Notifications ── */}
+      <AnimatePresence>
+        {chatNotification && !isChatOpen && (
+          <motion.div
+            initial={{ y: -20, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -20, opacity: 0, scale: 0.95 }}
+            onClick={() => { setIsChatOpen(true); setChatNotification(null); }}
+            className={`fixed top-16 right-5 z-60 cursor-pointer p-4 rounded-2xl shadow-2xl border backdrop-blur-3xl flex items-center space-x-4 max-w-[18rem] transition-all hover:scale-105 active:scale-95 ${
+              isTripMode 
+                ? 'bg-black/60 border-white/10 text-white' 
+                : 'bg-white/90 border-zinc-200 text-zinc-900'
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isTripMode ? 'bg-white/10' : 'bg-zinc-100'}`}>
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest leading-none mb-1">
+                New Message • {chatNotification.username}
+              </span>
+              <p className="text-xs font-light truncate">
+                {chatNotification.text}
+              </p>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* ── Chat Panel Overlay ── */}

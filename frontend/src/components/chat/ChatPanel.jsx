@@ -26,7 +26,7 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: '100%', opacity: 0 }}
       transition={{ type: 'spring', damping: 30, stiffness: 250 }}
-      className={`fixed top-0 right-0 w-80 md:w-[22rem] h-full z-40 flex flex-col shadow-2xl backdrop-blur-3xl ${
+      className={`fixed top-0 right-0 w-80 md:w-88 h-full z-40 flex flex-col shadow-2xl backdrop-blur-3xl ${
         isTripMode ? 'bg-black/60 border-l border-white/5' : 'bg-white/80 border-l border-zinc-200/50'
       }`}
     >
@@ -49,11 +49,14 @@ export function ChatPanel({ messages, onSendMessage, onClose, isTripMode, userna
         </div>
         <button 
           onClick={onClose} 
-          className={`p-2 rounded-full transition-colors duration-200 ${
-            isTripMode ? 'hover:bg-white/10 text-zinc-500 hover:text-zinc-300' : 'hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600'
+          className={`p-2.5 rounded-xl transition-all duration-200 active:scale-90 ${
+            isTripMode 
+              ? 'hover:bg-white/10 text-zinc-400 hover:text-white' 
+              : 'hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900'
           }`}
+          title="Close Chat"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
       </div>
 

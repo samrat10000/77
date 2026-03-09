@@ -1,23 +1,23 @@
 import { useRef, useEffect, useCallback } from 'react';
+import YouTube from 'react-youtube';
 import { useAppDispatch } from '@/lib/hooks';
 import { setMediaState, setMediaTime } from '@/features/media/mediaSlice';
 import { socketClient } from '@/lib/socketClient';
 
 /**
- * Convert a YouTube watch/share URL to an embed URL.
+ * Extract YouTube ID from various URL formats.
  */
-function toYouTubeEmbed(url) {
+function getYouTubeId(url) {
   try {
     const u = new URL(url);
-    let id = null;
-    if (u.hostname === 'youtu.be') {
-      id = u.pathname.slice(1);
-    } else {
-      id = u.searchParams.get('v');
+    if (u.hostname === 'youtu.be') return u.pathname.slice(1);
+    if (u.hostname.includes('youtube.com')) {
+      if (u.pathname.includes('/v/')) return u.pathname.split('/v/')[1];
+      if (u.pathname.includes('/embed/')) return u.pathname.split('/embed/')[1];
+      if (u.pathname.includes('/live/')) return u.pathname.split('/live/')[1];
+      return u.searchParams.get('v');
     }
-    if (!id) return null;
-    // enablejsapi=1 required for postMessage sync
-    return `https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&rel=0`;
+    return null;
   } catch {
     return null;
   }
@@ -26,9 +26,10 @@ function toYouTubeEmbed(url) {
 export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHost, isTripMode }) {
   const dispatch = useAppDispatch();
   const videoRef = useRef(null);
-  const isSyncing = useRef(false); // prevent echo loops
+  const playerRef = useRef(null);
+  const isSyncing = useRef(false);
 
-  // ── HTML5 video/audio sync ──────────────────────────────────────────────
+  // ── Sync Helpers ────────────────────────────────────────────────────────
 
   const emitSync = useCallback((state, time) => {
     if (isHost && sessionId) {
@@ -42,110 +43,128 @@ export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHos
     }
   }, [isHost, sessionId]);
 
-  // When remote mediaState or mediaTime changes (guest), apply to element
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || isHost) return;
-    isSyncing.current = true;
-    if (mediaState === 'playing') {
-      el.play().catch(() => {});
-    } else {
-      el.pause();
-    }
-    setTimeout(() => { isSyncing.current = false; }, 200);
-  }, [mediaState, isHost]);
+  // ── HTML5 Media Sync ────────────────────────────────────────────────────
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || isHost) return;
+    if (!el || isHost || type === 'youtube') return;
+    isSyncing.current = true;
+    if (mediaState === 'playing') el.play().catch(() => {});
+    else el.pause();
+    setTimeout(() => { isSyncing.current = false; }, 200);
+  }, [mediaState, isHost, type]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || isHost || type === 'youtube') return;
     const diff = Math.abs(el.currentTime - mediaTime);
-    if (diff > 1.5) { // re-sync if drifted more than 1.5s
-      el.currentTime = mediaTime;
+    if (diff > 2) el.currentTime = mediaTime;
+  }, [mediaTime, isHost, type]);
+
+  // ── YouTube Sync ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || isHost || type !== 'youtube') return;
+    
+    isSyncing.current = true;
+    if (mediaState === 'playing') {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
     }
-  }, [mediaTime, isHost]);
+    
+    const currTime = player.getCurrentTime();
+    if (Math.abs(currTime - mediaTime) > 2) {
+      player.seekTo(mediaTime, true);
+    }
+    
+    setTimeout(() => { isSyncing.current = false; }, 500);
+  }, [mediaState, mediaTime, isHost, type]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────
 
   const handlePlay = () => {
     if (isSyncing.current) return;
     dispatch(setMediaState('playing'));
-    emitSync('playing', videoRef.current?.currentTime ?? 0);
+    const time = type === 'youtube' ? playerRef.current?.getCurrentTime() : videoRef.current?.currentTime;
+    emitSync('playing', time ?? 0);
   };
 
   const handlePause = () => {
     if (isSyncing.current) return;
     dispatch(setMediaState('paused'));
-    emitSync('paused', videoRef.current?.currentTime ?? 0);
+    const time = type === 'youtube' ? playerRef.current?.getCurrentTime() : videoRef.current?.currentTime;
+    emitSync('paused', time ?? 0);
   };
 
-  const handleSeeked = () => {
+  const handleSeeked = (e) => {
     if (isSyncing.current) return;
-    emitSeek(videoRef.current?.currentTime ?? 0);
+    const time = type === 'youtube' ? playerRef.current?.getCurrentTime() : videoRef.current?.currentTime;
+    emitSeek(time ?? 0);
   };
 
   const handleTimeUpdate = () => {
-    dispatch(setMediaTime(videoRef.current?.currentTime ?? 0));
+    const time = type === 'youtube' ? playerRef.current?.getCurrentTime() : videoRef.current?.currentTime;
+    dispatch(setMediaTime(time ?? 0));
   };
 
   // ── Render ────────────────────────────────────────────────────────────
 
-  const containerClass = `w-full rounded-2xl overflow-hidden border ${
-    isTripMode ? 'border-white/10 bg-black/40' : 'border-zinc-200 bg-zinc-50'
+  const containerClass = `w-full rounded-2xl overflow-hidden border transition-all duration-500 ${
+    isTripMode ? 'border-white/10 bg-black/40 shadow-2xl shadow-purple-500/10' : 'border-zinc-200 bg-zinc-50 shadow-sm'
   }`;
 
   if (type === 'youtube') {
-    const embedUrl = toYouTubeEmbed(url);
-    if (!embedUrl) return null;
+    const videoId = getYouTubeId(url);
+    if (!videoId) return null;
+
     return (
       <div className={containerClass}>
-        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-          <iframe
-            src={embedUrl}
-            title="Jam Media"
-            allow="autoplay; encrypted-media; fullscreen"
-            allowFullScreen
+        <div className="relative w-full aspect-video">
+          <YouTube
+            videoId={videoId}
+            opts={{
+              width: '100%',
+              height: '100%',
+              playerVars: {
+                autoplay: 1,
+                controls: isHost ? 1 : 0,
+                rel: 0,
+                modestbranding: 1,
+              },
+            }}
+            onReady={({ target }) => { playerRef.current = target; }}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onEnd={handlePause}
+            onStateChange={({ data }) => {
+              // YouTube player states: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (video cued)
+              if (data === 1) handlePlay();
+              if (data === 2) handlePause();
+            }}
             className="absolute inset-0 w-full h-full"
           />
         </div>
         {!isHost && (
           <p className={`text-[10px] text-center py-2 font-mono ${isTripMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-            Controlled by host
+            Syncing with Host
           </p>
         )}
       </div>
     );
   }
 
-  if (type === 'video') {
+  if (type === 'video' || type === 'audio') {
+    const Tag = type === 'video' ? 'video' : 'audio';
     return (
-      <div className={containerClass}>
-        <video
+      <div className={`${containerClass} ${type === 'audio' ? 'p-4' : ''}`}>
+        <Tag
           ref={videoRef}
           src={url}
           controls={isHost}
           autoPlay
-          className="w-full rounded-2xl"
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onSeeked={handleSeeked}
-          onTimeUpdate={handleTimeUpdate}
-        />
-        {!isHost && (
-          <p className={`text-[10px] text-center py-2 font-mono ${isTripMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-            Controlled by host
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (type === 'audio') {
-    return (
-      <div className={`${containerClass} p-4`}>
-        <audio
-          ref={videoRef}
-          src={url}
-          controls={isHost}
-          autoPlay
-          className="w-full"
+          className="w-full rounded-xl focus:outline-none"
           onPlay={handlePlay}
           onPause={handlePause}
           onSeeked={handleSeeked}
@@ -153,7 +172,7 @@ export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHos
         />
         {!isHost && (
           <p className={`text-[10px] text-center mt-2 font-mono ${isTripMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-            Controlled by host
+            Syncing with Host
           </p>
         )}
       </div>
@@ -162,3 +181,4 @@ export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHos
 
   return null;
 }
+
