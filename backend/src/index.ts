@@ -164,19 +164,26 @@ io.on('connection', (socket) => {
     console.log(`Session created: ${sessionId} by ${username} (${socket.id})`);
   });
 
-  const addToSession = (sessionId: string, username: string) => {
+  const addToSession = (sessionId: string, username: string, isRejoin: boolean = false) => {
     socket.join(sessionId);
     const session = sessions[sessionId];
     const existingIndex = session.participants.findIndex(p => p.username === username);
     
     if (existingIndex > -1) {
-      // Update socket ID for existing username (reconnect)
       session.participants[existingIndex].socketId = socket.id;
     } else {
       session.participants.push({ socketId: socket.id, username });
     }
     
     io.to(sessionId).emit('participants-update', session.participants);
+
+    // Broadcast system message
+    io.to(sessionId).emit('chat-message', {
+      username: 'System',
+      text: `${username} ${isRejoin ? 'rejoined' : 'joined'} the jam`,
+      timestamp: Date.now(),
+      type: 'system'
+    });
   };
 
   socket.on('join-session', ({ sessionId, username }: { sessionId: string; username: string }) => {
@@ -184,20 +191,39 @@ io.on('connection', (socket) => {
       socket.emit('error', 'Session not found');
       return;
     }
-    addToSession(sessionId, username);
+    addToSession(sessionId, username, false);
     socket.emit('joined-session', { sessionId, state: sessions[sessionId] });
     console.log(`${username} (${socket.id}) joined session ${sessionId}`);
   });
 
-  // Rejoin after page refresh — same logic as join but doesn't clear state
   socket.on('rejoin-session', ({ sessionId, username }: { sessionId: string; username: string }) => {
     if (!sessions[sessionId]) {
-      socket.emit('session-expired'); // let frontend clear localStorage
+      socket.emit('session-expired');
       return;
     }
-    addToSession(sessionId, username);
+    addToSession(sessionId, username, true);
     socket.emit('rejoined-session', { sessionId, state: sessions[sessionId] });
     console.log(`${username} (${socket.id}) rejoined session ${sessionId}`);
+  });
+
+  socket.on('chat-message', ({ sessionId, text, username }: { sessionId: string; text: string; username: string }) => {
+    if (sessions[sessionId]) {
+      io.to(sessionId).emit('chat-message', {
+        username,
+        text,
+        timestamp: Date.now(),
+        type: 'user'
+      });
+    }
+  });
+
+  socket.on('send-reaction', ({ sessionId, emoji }: { sessionId: string; emoji: string }) => {
+    if (sessions[sessionId]) {
+      io.to(sessionId).emit('new-reaction', {
+        emoji,
+        id: Math.random().toString(36).substring(7)
+      });
+    }
   });
 
   socket.on('playback-sync', ({ sessionId, state }: { sessionId: string; state: Partial<PlaybackState> }) => {
@@ -208,12 +234,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Clean up participant from all sessions
     for (const [sessionId, session] of Object.entries(sessions)) {
-      const before = session.participants.length;
-      session.participants = session.participants.filter(p => p.socketId !== socket.id);
-      if (session.participants.length !== before) {
+      const participant = session.participants.find(p => p.socketId === socket.id);
+      if (participant) {
+        const username = participant.username;
+        session.participants = session.participants.filter(p => p.socketId !== socket.id);
         io.to(sessionId).emit('participants-update', session.participants);
+        
+        // System message for leave
+        io.to(sessionId).emit('chat-message', {
+          username: 'System',
+          text: `${username} left the jam`,
+          timestamp: Date.now(),
+          type: 'system'
+        });
       }
     }
     console.log('User disconnected:', socket.id);

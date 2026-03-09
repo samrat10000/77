@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Zap, Users, Share2, LogOut, User } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Zap, Users, Share2, LogOut, User, Send, Smile } from "lucide-react";
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { nextTrack, previousTrack, setCurrentIndex } from '@/features/playlist/playlistSlice';
 import { togglePlay, syncState, setProgress } from '@/features/player/playerSlice';
 import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
+// eslint-disable-next-line no-unused-vars
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,101 @@ async function apiAuth(endpoint, body) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+// ─── Floating Reactions ───────────────────────────────────────────────────────
+
+function FloatingReaction({ emoji, onComplete, startX, endX }) {
+  return (
+    <motion.div
+      initial={{ y: 0, opacity: 1, scale: 0.5, x: startX }}
+      animate={{ y: -400, opacity: 0, scale: 1.5, x: endX }}
+      transition={{ duration: 3, ease: "easeOut" }}
+      onAnimationComplete={onComplete}
+      className="absolute bottom-20 text-4xl pointer-events-none select-none z-50 left-1/2 -translate-x-1/2"
+    >
+      {emoji}
+    </motion.div>
+  );
+}
+
+// ─── Chat Panel ───────────────────────────────────────────────────────────────
+
+function ChatPanel({ messages, onSendMessage, onClose, isTripMode, username }) {
+  const [text, setText] = useState('');
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (text.trim()) {
+      onSendMessage(text.trim());
+      setText('');
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      className={`fixed top-0 right-0 w-80 h-full z-40 flex flex-col border-l shadow-2xl backdrop-blur-xl ${
+        isTripMode ? 'bg-black/60 border-white/10' : 'bg-white/80 border-zinc-200'
+      }`}
+    >
+      <div className="p-4 border-b border-zinc-100 flex items-center justify-between">
+        <h2 className={`font-bold text-sm uppercase tracking-widest ${isTripMode ? 'text-white' : 'text-zinc-900'}`}>
+          Jam Chat
+        </h2>
+        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">✕</button>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex flex-col ${m.type === 'system' ? 'items-center' : m.username === username ? 'items-end' : 'items-start'}`}>
+            {m.type === 'system' ? (
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter bg-zinc-100/50 px-2 py-0.5 rounded-full mb-1">
+                {m.text}
+              </span>
+            ) : (
+              <>
+                <span className="text-[10px] font-bold text-zinc-400 mb-1 px-1">{m.username}</span>
+                <div className={`px-3 py-2 rounded-2xl text-xs max-w-[90%] wrap-break-word ${
+                  m.username === username 
+                    ? 'bg-zinc-900 text-white rounded-tr-none' 
+                    : isTripMode ? 'bg-white/10 text-white rounded-tl-none' : 'bg-zinc-100 text-zinc-900 rounded-tl-none'
+                }`}>
+                  {m.text}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-100 flex space-x-2">
+        <input
+          type="text"
+          placeholder="Say something..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className={`flex-1 px-4 py-2.5 rounded-xl text-xs border focus:ring-1 focus:outline-none transition-all ${
+            isTripMode
+              ? 'bg-white/5 border-white/10 text-white focus:ring-white/30 placeholder:text-zinc-500'
+              : 'bg-zinc-50 border-zinc-200 text-zinc-900 focus:ring-zinc-400 placeholder:text-zinc-400'
+          }`}
+        />
+        <button type="submit" className="p-2.5 bg-zinc-900 text-white rounded-xl hover:scale-105 active:scale-95 transition-all">
+          <Send className="w-4 h-4" />
+        </button>
+      </form>
+    </motion.div>
+  );
 }
 
 // ─── Auth Modal ───────────────────────────────────────────────────────────────
@@ -154,6 +251,12 @@ export default function App() {
     };
   }, [isDragging, handleSeek]);
 
+  // ── Chat & Reactions State ────────────────────────────────────────────────
+  
+  const [messages, setMessages] = useState([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [activeReactions, setActiveReactions] = useState([]);
+
   // ── Socket / Jam ──────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -191,6 +294,18 @@ export default function App() {
       dispatch(setParticipants(users));
     });
 
+    socket.on('chat-message', (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
+
+    socket.on('new-reaction', (reaction) => {
+      setActiveReactions((prev) => [...prev, {
+        ...reaction,
+        startX: (Math.random() - 0.5) * 100,
+        endX: (Math.random() - 0.5) * 200
+      }]);
+    });
+
     socket.on('playback-update', (state) => {
       if (!isHost) {
         if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
@@ -214,6 +329,8 @@ export default function App() {
       socket.off('rejoined-session');
       socket.off('session-expired');
       socket.off('participants-update');
+      socket.off('chat-message');
+      socket.off('new-reaction');
       socket.off('playback-update');
     };
   }, [dispatch, isHost, audioRef, username]);
@@ -258,6 +375,19 @@ export default function App() {
     dispatch(leaveSession());
     localStorage.removeItem(LS_SESSION);
     socketClient.disconnect();
+    setMessages([]);
+  };
+
+  const handleSendMessage = (text) => {
+    if (sessionId) {
+      socketClient.emit('chat-message', { sessionId, text, username });
+    }
+  };
+
+  const handleSendReaction = (emoji) => {
+    if (sessionId) {
+      socketClient.emit('send-reaction', { sessionId, emoji });
+    }
   };
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
@@ -289,12 +419,44 @@ export default function App() {
       {/* Hidden Audio Element */}
       <audio ref={audioRef} crossOrigin="anonymous" />
 
+      {/* ── Floating Reactions Overlay ── */}
+      <AnimatePresence>
+        {activeReactions.map((r) => (
+          <FloatingReaction
+            key={r.id}
+            emoji={r.emoji}
+            startX={r.startX}
+            endX={r.endX}
+            onComplete={() => setActiveReactions((prev) => prev.filter((item) => item.id !== r.id))}
+          />
+        ))}
+      </AnimatePresence>
+
+      {/* ── Chat Panel Overlay ── */}
+      <AnimatePresence>
+        {isChatOpen && (
+          <ChatPanel
+            messages={messages}
+            username={username}
+            isTripMode={isTripMode}
+            onSendMessage={handleSendMessage}
+            onClose={() => setIsChatOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Player Section ── */}
       <section className="relative z-20 w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-500">
 
         {/* Album Art */}
         <div className="w-full aspect-square bg-white shadow-xl shadow-black/5 p-4 md:p-5 flex flex-col justify-between">
           <div className="w-full h-full bg-zinc-100 flex items-center justify-center overflow-hidden relative">
+            <button 
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className="absolute top-4 right-4 z-30 p-2 rounded-full bg-white/80 backdrop-blur shadow-sm hover:scale-110 transition-all"
+            >
+              <Share2 className="w-4 h-4 text-zinc-900 rotate-90" />
+            </button>
             {currentTrack.albumArt ? (
               <img
                 src={currentTrack.albumArt}
@@ -370,18 +532,36 @@ export default function App() {
           </div>
         </div>
 
-        {/* Trip Mode Button */}
-        <button
-          onClick={() => setIsTripMode(!isTripMode)}
-          className={`flex items-center space-x-2 px-6 py-2 rounded-full border transition-all duration-300 group ${
-            isTripMode
-              ? 'bg-white/20 border-white/40 text-white hover:bg-white/30'
-              : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:border-zinc-300'
-          }`}
-        >
-          <Zap className={`w-4 h-4 ${isTripMode ? 'fill-white animate-pulse' : 'text-zinc-400 group-hover:text-zinc-600'}`} />
-          <span className="text-[10px] font-bold tracking-widest uppercase">Trip Mode</span>
-        </button>
+        {/* Reaction Bar & Trip Mode */}
+        <div className="flex flex-col items-center space-y-6 w-full">
+          {isJoined && (
+            <div className={`flex items-center space-x-4 p-2 px-4 rounded-2xl border ${
+              isTripMode ? 'bg-white/5 border-white/10' : 'bg-zinc-50 border-zinc-100'
+            }`}>
+              {['❤️', '🔥', '🎸', '😮', '🙌'].map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => handleSendReaction(emoji)}
+                  className="text-xl hover:scale-125 active:scale-90 transition-all grayscale-[0.5] hover:grayscale-0"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setIsTripMode(!isTripMode)}
+            className={`flex items-center space-x-2 px-6 py-2 rounded-full border transition-all duration-300 group ${
+              isTripMode
+                ? 'bg-white/20 border-white/40 text-white hover:bg-white/30'
+                : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:border-zinc-300'
+            }`}
+          >
+            <Zap className={`w-4 h-4 ${isTripMode ? 'fill-white animate-pulse' : 'text-zinc-400 group-hover:text-zinc-600'}`} />
+            <span className="text-[10px] font-bold tracking-widest uppercase">Trip Mode</span>
+          </button>
+        </div>
 
         {/* ── Jam Session UI ── */}
         <div className={`w-full pt-6 border-t ${isTripMode ? 'border-white/10' : 'border-zinc-100'}`}>
@@ -426,13 +606,22 @@ export default function App() {
                       {isHost ? 'Hosting Jam' : 'Joined Jam'}
                     </span>
                   </div>
-                  <button
-                    onClick={handleLeaveSession}
-                    className="p-1 rounded-md hover:bg-red-500/10 text-red-500 transition-all"
-                    title="Leave Session"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setIsChatOpen(true)}
+                      className={`p-1.5 rounded-md transition-all ${isTripMode ? 'hover:bg-white/10' : 'hover:bg-zinc-200'}`}
+                      title="Open Chat"
+                    >
+                      <Share2 className="w-4 h-4 rotate-90" />
+                    </button>
+                    <button
+                      onClick={handleLeaveSession}
+                      className="p-1 rounded-md hover:bg-red-500/10 text-red-500 transition-all"
+                      title="Leave Session"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Session code */}
