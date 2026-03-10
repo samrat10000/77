@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Moon, Sun, MessageSquare } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { setCurrentIndex } from '@/features/playlist/playlistSlice';
-import { syncState, setProgress } from '@/features/player/playerSlice';
+import { syncState, setProgress } from "@/features/player/playerSlice";
 import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
@@ -92,15 +92,31 @@ export default function App() {
       localStorage.setItem(LS_SESSION, id);
     });
 
-    socket.on('joined-session', ({ sessionId: id, state }) => {
-      dispatch(setSessionId(id));
+    socket.on('joined-session', ({ sessionId, state }) => {
+      dispatch(setSessionId(sessionId));
+      dispatch(setParticipants(state.participants || []));
       dispatch(setIsHost(false));
-      dispatch(setCurrentIndex(state.trackIndex));
-      dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
-      if (state.media?.url) {
+      
+      // Sync music player
+      if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
+      if (state.isPlaying !== undefined) dispatch(syncState({ isPlaying: state.isPlaying }));
+      
+      // Catch up on progress
+      const now = Date.now();
+      const elapsedSinceUpdate = (now - (state.lastUpdated || now)) / 1000;
+      const actualProgress = state.isPlaying ? state.progress + elapsedSinceUpdate : state.progress;
+      dispatch(setProgress(actualProgress));
+      
+      // Force audio sync immediately on join
+      if (audioRef.current && actualProgress > 0) {
+        audioRef.current.currentTime = actualProgress;
+      }
+      
+      // Update media if exists
+      if (state.media && state.media.url) {
         dispatch(setMedia(state.media));
       }
-      localStorage.setItem(LS_SESSION, id);
+      localStorage.setItem(LS_SESSION, sessionId);
     });
 
     // Auto-rejoin after page refresh
@@ -199,14 +215,22 @@ export default function App() {
     };
   }, [dispatch, isHost, audioRef, username]);
 
-  // ── Host playback sync ────────────────────────────────────────────────────
+  // ── Host playback sync (Throttled) ─────────────────────────────────────────
 
+  const lastSyncRef = useRef(0);
   useEffect(() => {
     if (isHost && sessionId) {
-      socketClient.emit('playback-sync', {
-        sessionId,
-        state: { trackIndex: currentIndex, isPlaying, progress }
-      });
+      const now = Date.now();
+      // Only sync once every 800ms while playing, OR immediately if state changes
+      const isImportantUpdate = !isPlaying || currentIndex !== lastSyncRef.current.trackIndex;
+      
+      if (isImportantUpdate || (now - lastSyncRef.current.time > 800)) {
+        socketClient.emit('playback-sync', {
+          sessionId,
+          state: { trackIndex: currentIndex, isPlaying, progress }
+        });
+        lastSyncRef.current = { time: now, trackIndex: currentIndex };
+      }
     }
   }, [isHost, sessionId, currentIndex, isPlaying, progress]);
 

@@ -37,7 +37,11 @@ export const useAudioPlayer = () => {
     if (isPlaying) {
       const t = setTimeout(() => {
         audio.play().catch((err) => {
-          if (err.name !== "AbortError") dispatch(togglePlay());
+          if (err.name !== "AbortError") {
+            console.warn("Autoplay prevented:", err);
+            // If it's a listener, we don't dispatch togglePlay here to avoid
+            // flickering state. They just need to interact with the page.
+          }
         });
       }, 50);
       return () => clearTimeout(t);
@@ -57,9 +61,7 @@ export const useAudioPlayer = () => {
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
           if (err.name !== "AbortError") {
-            console.warn("Autoplay prevented:", err);
-            // We won't automatically togglePlay to avoid overriding the global state just because
-            // of local autoplay blocks, but user will need to interact mechanically.
+            console.warn("Autoplay prevented on sync:", err);
           }
         });
       }
@@ -67,6 +69,21 @@ export const useAudioPlayer = () => {
       audio.pause();
     }
   }, [isPlaying, volume]);
+
+  // Global interaction kickstart for listeners whose audio might be blocked
+  useEffect(() => {
+    const handleInteraction = () => {
+      if (isPlaying && audioRef.current?.paused) {
+        audioRef.current.play().catch(() => {});
+      }
+    };
+    window.addEventListener("click", handleInteraction);
+    window.addEventListener("touchstart", handleInteraction);
+    return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, [isPlaying]);
 
   // Wire up event listeners
   useEffect(() => {
