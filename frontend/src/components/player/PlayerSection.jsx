@@ -25,7 +25,9 @@ export function PlayerSection({
 
   return (
     <>
-      <div className={`w-full aspect-square shadow-xl p-4 md:p-5 flex flex-col justify-between transition-colors duration-500 bg-white shadow-black/5`}>
+      <div className={`w-full aspect-square shadow-xl p-4 md:p-5 flex flex-col justify-between transition-all duration-700 ease-in-out transform-gpu border ${
+        isTripMode ? 'bg-white/5 border-white/10 relative z-50' : 'bg-white border-transparent shadow-black/5'
+      }`}>
         <div className={`w-full h-full flex items-center justify-center overflow-hidden relative bg-zinc-100`}>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)}
@@ -50,7 +52,7 @@ export function PlayerSection({
       </div>
 
       <div className="w-full space-y-3 select-none">
-        <div className="mb-6">
+        <div className="mb-6 transition-all duration-700" style={{ filter: isTripMode ? 'blur(10px)' : 'none' }}>
           <h1 className={`text-3xl font-serif font-bold tracking-tight truncate transition-colors duration-300 ${dark ? 'text-red-950/70' : 'text-zinc-900'}`} title={currentTrack.title}>
             {currentTrack.title}
           </h1>

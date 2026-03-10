@@ -411,7 +411,7 @@ export default function App() {
           }}
         />
       )}
-      {isTripMode && <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-5" />}
+      {isTripMode && <div className="absolute inset-0 bg-black/40 z-10 transition-all duration-700" />}
 
       {/* ── Sketch-It Canvas ── */}
       <Suspense fallback={null}>
@@ -503,7 +503,7 @@ export default function App() {
       </Suspense>
 
       {/* ── Player Section ── */}
-      <section className="relative w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-500">
+      <section className="relative w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-700 ease-in-out">
         <Suspense fallback={<div className="h-64 w-full flex items-center justify-center">Loading Player...</div>}>
           <PlayerSection
             currentTrack={currentTrack}
@@ -574,10 +574,11 @@ export default function App() {
       </section>
 
       {/* Lyrics footer */}
-      <footer className="relative z-10 w-full max-w-sm text-center mt-12 md:mt-24 mb-8">
-        <p className={`text-sm leading-relaxed font-serif italic transition-colors duration-300 ${
+      <footer className="relative z-10 w-full max-w-sm text-center mt-12 md:mt-24 mb-8 transition-all duration-700 ease-in-out">
+        <p className={`text-sm leading-relaxed font-serif italic transition-all duration-700 ease-in-out ${
           isTripMode ? 'text-white/50' : isDarkMode ? 'text-zinc-500' : 'text-zinc-600'
-        }`}>
+        }`}
+        style={{ filter: isTripMode ? 'blur(6px)' : 'none' }}>
           {currentTrack.quote?.split('\n').map((line, i) => (
             <span key={i}>{line}<br /></span>
           ))}

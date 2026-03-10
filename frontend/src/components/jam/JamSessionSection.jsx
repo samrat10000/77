@@ -1,4 +1,4 @@
-import { Zap, Users, Share2, LogOut, Pen, Trash2 } from "lucide-react";
+import { Zap, Users, Share2, LogOut, Pen, Trash2, Heart, Flame, Music4, Sparkles, PartyPopper } from "lucide-react";
 
 export function JamSessionSection({
   isJoined,
@@ -29,13 +29,21 @@ export function JamSessionSection({
           <div className={`flex items-center space-x-4 p-2 px-4 rounded-2xl border relative z-100 ${
             isTripMode ? 'bg-white/5 border-white/10' : dark ? 'bg-zinc-800 border-zinc-700' : 'bg-zinc-50 border-zinc-100'
           }`}>
-            {['❤️', '🔥', '🎸', '😮', '🙌'].map((emoji) => (
+            {[
+              { type: 'heart', Icon: Heart, color: 'text-rose-500' },
+              { type: 'fire', Icon: Flame, color: 'text-orange-500' },
+              { type: 'music', Icon: Music4, color: 'text-purple-500' },
+              { type: 'sparkle', Icon: Sparkles, color: 'text-yellow-500' },
+              { type: 'party', Icon: PartyPopper, color: 'text-blue-500' }
+            ].map(({ type, Icon, color }) => (
               <button
-                key={emoji}
-                onClick={() => handleSendReaction(emoji)}
-                className="text-xl hover:scale-125 active:scale-90 transition-all grayscale-[0.5] hover:grayscale-0"
+                key={type}
+                onClick={() => handleSendReaction(type)}
+                className={`p-1 rounded-lg transition-all hover:scale-125 active:scale-90 group relative`}
               >
-                {emoji}
+                <Icon className={`w-5 h-5 transition-all ${
+                  isTripMode ? 'text-white/40 group-hover:text-white' : `text-zinc-400 group-hover:${color}`
+                }`} />
               </button>
             ))}
             <div className="w-px h-4 bg-zinc-200/20 mx-1" />
@@ -136,9 +144,10 @@ export function JamSessionSection({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className={`p-4 rounded-xl border flex flex-col space-y-3 ${
+            <div className={`p-4 rounded-xl border flex flex-col space-y-3 transition-all duration-700 ${
               isTripMode ? 'bg-white/5 border-white/10' : dark ? 'bg-zinc-800 border-zinc-700' : 'bg-zinc-50 border-zinc-200'
-            }`}>
+            }`}
+            style={{ filter: isTripMode ? 'blur(6px)' : 'none' }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
