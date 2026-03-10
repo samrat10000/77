@@ -1,4 +1,4 @@
-import { Zap, Users, Share2, LogOut } from "lucide-react";
+import { Zap, Users, Share2, LogOut, Pen, Trash2 } from "lucide-react";
 
 export function JamSessionSection({
   isJoined,
@@ -15,6 +15,10 @@ export function JamSessionSection({
   handleLeaveSession,
   sessionId,
   participants,
+  onSendNudge,
+  isDoodling,
+  setIsDoodling,
+  onClearSketch,
 }) {
   const dark = isDarkMode && !isTripMode;
 
@@ -22,7 +26,7 @@ export function JamSessionSection({
     <>
       <div className="flex flex-col items-center space-y-6 w-full">
         {isJoined && (
-          <div className={`flex items-center space-x-4 p-2 px-4 rounded-2xl border ${
+          <div className={`flex items-center space-x-4 p-2 px-4 rounded-2xl border relative z-100 ${
             isTripMode ? 'bg-white/5 border-white/10' : dark ? 'bg-zinc-800 border-zinc-700' : 'bg-zinc-50 border-zinc-100'
           }`}>
             {['❤️', '🔥', '🎸', '😮', '🙌'].map((emoji) => (
@@ -34,12 +38,48 @@ export function JamSessionSection({
                 {emoji}
               </button>
             ))}
+            <div className="w-px h-4 bg-zinc-200/20 mx-1" />
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setIsDoodling(!isDoodling)}
+                className={`p-1.5 rounded-full transition-all hover:scale-125 active:scale-90 ${
+                  isDoodling 
+                    ? (isTripMode ? 'bg-white text-black' : 'bg-rose-500 text-white shadow-lg shadow-rose-500/30') 
+                    : (isTripMode ? 'bg-white/10 text-white' : 'bg-white border border-zinc-200 text-zinc-400')
+                }`}
+                title={isDoodling ? "Stop Doodling" : "Start Doodling"}
+              >
+                <Pen className="w-3.5 h-3.5" />
+              </button>
+              
+              {isDoodling && (
+                <button
+                  onClick={onClearSketch}
+                  className={`p-1.5 rounded-full transition-all hover:scale-125 active:scale-90 ${
+                    isTripMode ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-zinc-100 text-zinc-400 hover:text-rose-500'
+                  }`}
+                  title="Clear All Doodles"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              <button
+                onClick={onSendNudge}
+                className={`p-1.5 rounded-full transition-all hover:scale-125 active:scale-90 ${
+                  isTripMode ? 'bg-white/10 text-white' : 'bg-rose-500 text-white shadow-lg shadow-rose-500/30'
+                }`}
+                title="Send Vibe"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current" />
+              </button>
+            </div>
           </div>
         )}
 
         <button
           onClick={() => setIsTripMode(!isTripMode)}
-          className={`flex items-center space-x-2 px-6 py-2 rounded-full border transition-all duration-300 group ${
+          className={`flex items-center space-x-2 px-6 py-2 rounded-full border transition-all duration-300 group relative z-100 ${
             isTripMode
               ? 'bg-white/20 border-white/40 text-white hover:bg-white/30'
               : dark
@@ -57,7 +97,7 @@ export function JamSessionSection({
           <div className="space-y-4">
             <button
               onClick={handleCreateSession}
-              className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl transition-all font-medium text-sm ${
+              className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl transition-all font-medium text-sm relative z-100 ${
                 dark ? 'bg-white text-zinc-900 hover:bg-zinc-200' : 'bg-zinc-900 text-white hover:bg-zinc-800'
               }`}
             >
@@ -65,7 +105,12 @@ export function JamSessionSection({
               <span>Start Jam Session</span>
             </button>
 
-            <form onSubmit={handleJoinSession} className="relative">
+            <form onSubmit={handleJoinSession} className="relative z-100">
+              <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-mono tracking-tighter ${
+                isTripMode ? 'text-zinc-400' : dark ? 'text-zinc-500' : 'text-zinc-400'
+              }`}>
+                jam.new/
+              </span>
               <input
                 type="text"
                 placeholder="Paste Jam Code..."
@@ -73,7 +118,7 @@ export function JamSessionSection({
                 onChange={(e) => setJoinId(e.target.value)}
                 className={`w-full px-4 py-3 rounded-xl text-sm border focus:ring-1 focus:outline-none transition-all ${
                   isTripMode
-                    ? 'bg-white/5 border-white/10 text-white focus:ring-white/30 placeholder:text-zinc-500'
+                    ? 'bg-white/5 border-white/10 text-white focus:ring-white/30 placeholder:text-zinc-500 pl-20'
                     : dark
                     ? 'bg-zinc-800 border-zinc-700 text-zinc-100 focus:ring-zinc-500 placeholder:text-zinc-500'
                     : 'bg-zinc-50 border-zinc-200 text-zinc-900 focus:ring-zinc-400 placeholder:text-zinc-400'

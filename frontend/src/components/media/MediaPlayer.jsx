@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback } from 'react';
 import YouTube from 'react-youtube';
 import { useAppDispatch } from '@/lib/hooks';
 import { setMediaState, setMediaTime } from '@/features/media/mediaSlice';
-import { socketClient } from '@/lib/socketClient';
+import { webrtcClient } from '@/lib/webrtcClient';
 
 /**
  * Extract YouTube ID from various URL formats.
@@ -33,13 +33,13 @@ export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHos
 
   const emitSync = useCallback((state, time) => {
     if (isHost && sessionId) {
-      socketClient.emit('media:sync', { sessionId, time, state });
+      webrtcClient.send('media:sync', { sessionId, time, state });
     }
   }, [isHost, sessionId]);
 
   const emitSeek = useCallback((time) => {
     if (isHost && sessionId) {
-      socketClient.emit('media:seek', { sessionId, time });
+      webrtcClient.send('media:seek', { sessionId, time });
     }
   }, [isHost, sessionId]);
 
@@ -98,7 +98,7 @@ export function MediaPlayer({ url, type, mediaState, mediaTime, sessionId, isHos
     emitSync('paused', time ?? 0);
   };
 
-  const handleSeeked = (e) => {
+  const handleSeeked = () => {
     if (isSyncing.current) return;
     const time = type === 'youtube' ? playerRef.current?.getCurrentTime() : videoRef.current?.currentTime;
     emitSeek(time ?? 0);

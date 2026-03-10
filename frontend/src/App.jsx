@@ -1,21 +1,23 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Moon, Sun, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense, memo } from 'react';
+import { Moon, Sun, MessageSquare, Heart } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/lib/hooks';
 import { setCurrentIndex } from '@/features/playlist/playlistSlice';
 import { syncState, setProgress } from "@/features/player/playerSlice";
 import { useAudioPlayer } from '@/lib/audio';
 import { socketClient } from '@/lib/socketClient';
+import { webrtcClient } from '@/lib/webrtcClient';
 import { setSessionId, setIsHost, setParticipants, leaveSession } from '@/features/jam/jamSlice';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { getStoredUsername, getStoredToken, LS_SESSION } from '@/lib/auth';
-import { AuthModal } from '@/components/auth/AuthModal';
-import { FloatingReaction } from '@/components/chat/FloatingReaction';
-import { ChatPanel } from '@/components/chat/ChatPanel';
-import { PlayerSection } from '@/components/player/PlayerSection';
-import { JamSessionSection } from '@/components/jam/JamSessionSection';
-import { MediaInput } from '@/components/media/MediaInput';
-import { MediaPlayer } from '@/components/media/MediaPlayer';
+const AuthModal = lazy(() => import('@/components/auth/AuthModal').then(m => ({ default: m.AuthModal })));
+const FloatingReaction = memo(lazy(() => import('@/components/chat/FloatingReaction').then(m => ({ default: m.FloatingReaction }))));
+const ChatPanel = lazy(() => import('@/components/chat/ChatPanel').then(m => ({ default: m.ChatPanel })));
+const PlayerSection = lazy(() => import('@/components/player/PlayerSection').then(m => ({ default: m.PlayerSection })));
+const JamSessionSection = lazy(() => import('@/components/jam/JamSessionSection').then(m => ({ default: m.JamSessionSection })));
+const MediaInput = lazy(() => import('@/components/media/MediaInput').then(m => ({ default: m.MediaInput })));
+const MediaPlayer = lazy(() => import('@/components/media/MediaPlayer').then(m => ({ default: m.MediaPlayer })));
+const SketchCanvas = lazy(() => import('@/components/media/SketchCanvas').then(m => ({ default: m.SketchCanvas })));
 import { setMedia, setMediaState, setMediaTime, clearMedia } from '@/features/media/mediaSlice';
 
 export default function App() {
@@ -31,6 +33,12 @@ export default function App() {
   const [bgIndex, setBgIndex] = useState(1);
   const [joinId, setJoinId] = useState('');
   const [chatNotification, setChatNotification] = useState(null);
+  const [nudgeVisual, setNudgeVisual] = useState(false);
+  const [isPerfectSync, setIsPerfectSync] = useState(false);
+  const [incomingStroke, setIncomingStroke] = useState(null);
+  const [isDoodling, setIsDoodling] = useState(false);
+  const [clearSketchSignal, setClearSketchSignal] = useState(0);
+  const lastLocalTapRef = useRef(0);
 
   const currentTrack = tracks[currentIndex];
   const { audioRef, seek } = useAudioPlayer();
@@ -90,12 +98,15 @@ export default function App() {
       dispatch(setSessionId(id));
       dispatch(setIsHost(true));
       localStorage.setItem(LS_SESSION, id);
+      webrtcClient.init(true, username, socket.id);
     });
 
     socket.on('joined-session', ({ sessionId, state }) => {
       dispatch(setSessionId(sessionId));
       dispatch(setParticipants(state.participants || []));
       dispatch(setIsHost(false));
+      webrtcClient.init(false, username, socket.id);
+      webrtcClient.syncPeers(state.participants || []);
       
       // Sync music player
       if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
@@ -122,7 +133,11 @@ export default function App() {
     // Auto-rejoin after page refresh
     socket.on('rejoined-session', ({ sessionId: id, state }) => {
       dispatch(setSessionId(id));
-      dispatch(setIsHost(state.hostUsername === username));
+      const hostCheck = state.hostUsername === username;
+      dispatch(setIsHost(hostCheck));
+      webrtcClient.init(hostCheck, username, socket.id);
+      webrtcClient.syncPeers(state.participants || []);
+
       dispatch(setCurrentIndex(state.trackIndex));
       dispatch(syncState({ isPlaying: state.isPlaying, progress: state.progress }));
       if (state.media?.url) {
@@ -136,28 +151,28 @@ export default function App() {
 
     socket.on('participants-update', (users) => {
       dispatch(setParticipants(users));
+      webrtcClient.syncPeers(users);
     });
 
-    socket.on('chat-message', (msg) => {
+    const handleChatMsg = (msg) => {
       if (!msg) return;
       setMessages((prev) => [...prev, msg]);
       
-      // Show notification if chat is closed and msg is not from system or self
       if (!isChatOpenRef.current && msg.type === 'user' && msg.username && msg.username !== username) {
         setChatNotification(msg);
         setTimeout(() => setChatNotification(null), 5000);
       }
-    });
+    };
 
-    socket.on('new-reaction', (reaction) => {
+    const handleReaction = (reaction) => {
       setActiveReactions((prev) => [...prev, {
         ...reaction,
         startX: (Math.random() - 0.5) * 100,
         endX: (Math.random() - 0.5) * 200
       }]);
-    });
+    };
 
-    socket.on('playback-update', (state) => {
+    const handlePlaybackUpdate = (state) => {
       if (!state) return;
       if (!isHost) {
         if (state.trackIndex !== undefined) dispatch(setCurrentIndex(state.trackIndex));
@@ -166,35 +181,73 @@ export default function App() {
           dispatch(setProgress(state.progress));
           if (audioRef?.current) {
             try {
-              audioRef.current.currentTime = state.progress;
+              const diff = Math.abs(audioRef.current.currentTime - state.progress);
+              if (diff > 1) { // 1 second tolerance to prevent stuttering
+                audioRef.current.currentTime = state.progress;
+              }
             } catch (e) {
               console.warn("Failed to sync audio time:", e);
             }
           }
         }
       }
-    });
+    };
 
-    // ── Media events (guests only receive) ────────────────────────────────
-    socket.on('media:load', (data) => {
+    const handleMediaLoad = (data) => {
       if (data?.url) dispatch(setMedia(data));
-    });
+    };
 
-    socket.on('media:sync', (data) => {
+    const handleMediaSync = (data) => {
       if (!data) return;
       if (data.time !== undefined && typeof data.time === 'number' && !isNaN(data.time)) {
         dispatch(setMediaTime(data.time));
       }
       if (data.state) dispatch(setMediaState(data.state));
-    });
+    };
 
-    socket.on('media:seek', (data) => {
+    const handleMediaSeek = (data) => {
       if (data?.time !== undefined && typeof data.time === 'number' && !isNaN(data.time)) {
         dispatch(setMediaTime(data.time));
       }
-    });
+    };
+    
+    const handleNudge = (payload) => {
+      const remoteTimestamp = payload?.timestamp || 0;
+      
+      // If taps are within 200ms of each other (adjusting for network jitter)
+      // or if the remote tap is very close to our last local tap
+      const isSync = (remoteTimestamp && Math.abs(remoteTimestamp - lastLocalTapRef.current) < 200);
 
-    // Auto-rejoin saved jam session on mount
+      if (isSync) {
+        setIsPerfectSync(true);
+        setTimeout(() => setIsPerfectSync(false), 2000);
+      } else {
+        setNudgeVisual(true);
+        setTimeout(() => setNudgeVisual(false), 1000);
+      }
+      
+      if ('vibrate' in navigator) {
+        if (isSync) {
+          navigator.vibrate([100, 50, 100, 50, 300]); // Intense sync vibration
+        } else {
+          navigator.vibrate([200, 100, 200]);
+        }
+      }
+    };
+
+    webrtcClient.on('chat-message', handleChatMsg);
+    webrtcClient.on('new-reaction', handleReaction);
+    webrtcClient.on('playback-update', handlePlaybackUpdate);
+    webrtcClient.on('media:load', handleMediaLoad);
+    webrtcClient.on('media:sync', handleMediaSync);
+    webrtcClient.on('media:seek', handleMediaSeek);
+    webrtcClient.on('haptic-pulse', handleNudge);
+    webrtcClient.on('drawing-data', (data) => setIncomingStroke(data));
+    webrtcClient.on('clear-sketch', () => setClearSketchSignal(prev => prev + 1));
+
+    // Re-bind socket listener specifically for system messages from the backend
+    socket.on('chat-message', handleChatMsg);
+
     const savedSession = localStorage.getItem(LS_SESSION);
     if (savedSession) {
       socket.emit('rejoin-session', { sessionId: savedSession, username });
@@ -206,14 +259,34 @@ export default function App() {
       socket.off('rejoined-session');
       socket.off('session-expired');
       socket.off('participants-update');
-      socket.off('chat-message');
-      socket.off('new-reaction');
-      socket.off('playback-update');
-      socket.off('media:load');
-      socket.off('media:sync');
-      socket.off('media:seek');
+      socket.off('chat-message', handleChatMsg);
+      
+      webrtcClient.off('chat-message', handleChatMsg);
+      webrtcClient.off('new-reaction', handleReaction);
+      webrtcClient.off('playback-update', handlePlaybackUpdate);
+      webrtcClient.off('media:load', handleMediaLoad);
+      webrtcClient.off('media:sync', handleMediaSync);
+      webrtcClient.off('media:seek', handleMediaSeek);
+      webrtcClient.off('haptic-pulse', handleNudge);
+      webrtcClient.off('drawing-data');
+      webrtcClient.off('clear-sketch');
     };
   }, [dispatch, isHost, audioRef, username]);
+
+  // ── Host New Peer Sync ──────────────────────────────────────────────────
+  useEffect(() => {
+    const handlePeerConnected = () => {
+      if (isHost && sessionId) {
+        webrtcClient.send('playback-update', { trackIndex: currentIndex, isPlaying, progress });
+        if (mediaUrl) {
+          webrtcClient.send('media:load', { url: mediaUrl, type: mediaType });
+          webrtcClient.send('media:sync', { time: mediaTime, state: mediaState });
+        }
+      }
+    };
+    webrtcClient.on('peer-connected', handlePeerConnected);
+    return () => webrtcClient.off('peer-connected', handlePeerConnected);
+  }, [isHost, sessionId, currentIndex, isPlaying, progress, mediaUrl, mediaType, mediaTime, mediaState]);
 
   // ── Host playback sync (Throttled) ─────────────────────────────────────────
 
@@ -225,10 +298,7 @@ export default function App() {
       const isImportantUpdate = !isPlaying || currentIndex !== lastSyncRef.current.trackIndex;
       
       if (isImportantUpdate || (now - lastSyncRef.current.time > 800)) {
-        socketClient.emit('playback-sync', {
-          sessionId,
-          state: { trackIndex: currentIndex, isPlaying, progress }
-        });
+        webrtcClient.send('playback-update', { trackIndex: currentIndex, isPlaying, progress });
         lastSyncRef.current = { time: now, trackIndex: currentIndex };
       }
     }
@@ -239,7 +309,8 @@ export default function App() {
   useEffect(() => {
     let interval;
     if (isTripMode) {
-      interval = setInterval(() => setBgIndex((prev) => (prev % 5) + 1), 200);
+      // Reduced frequency and using CSS transitions for smoother feel with less CPU
+      interval = setInterval(() => setBgIndex((prev) => (prev % 5) + 1), 135);
     }
     return () => clearInterval(interval);
   }, [isTripMode]);
@@ -270,25 +341,52 @@ export default function App() {
   const handleMediaLoad = ({ url, type }) => {
     if (!isHost || !sessionId) return;
     dispatch(setMedia({ url, type }));
-    socketClient.emit('media:load', { sessionId, url, type });
+    webrtcClient.send('media:load', { url, type });
   };
 
   const handleSendMessage = (text) => {
     if (sessionId) {
-      socketClient.emit('chat-message', { sessionId, text, username });
+      const msg = { username, text, timestamp: Date.now(), type: 'user' };
+      setMessages((prev) => [...prev, msg]); // Show locally
+      webrtcClient.send('chat-message', msg);
     }
   };
 
   const handleSendReaction = (emoji) => {
     if (sessionId) {
-      socketClient.emit('send-reaction', { sessionId, emoji });
+      const reaction = { emoji, id: Math.random().toString(36).substring(7) };
+      setActiveReactions((prev) => [...prev, {
+        ...reaction,
+        startX: (Math.random() - 0.5) * 100,
+        endX: (Math.random() - 0.5) * 200
+      }]);
+      webrtcClient.send('new-reaction', reaction);
     }
+  };
+
+  const handleSendNudge = () => {
+    if (sessionId) {
+      const now = Date.now();
+      lastLocalTapRef.current = now;
+      setNudgeVisual(true);
+      setTimeout(() => setNudgeVisual(false), 1000);
+      webrtcClient.send('haptic-pulse', { timestamp: now });
+    }
+  };
+
+  const handleClearSketch = () => {
+    setClearSketchSignal(prev => prev + 1);
+    webrtcClient.send('clear-sketch', {});
   };
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
 
   if (!username || !getStoredToken()) {
-    return <AuthModal onSuccess={(name) => setUsername(name)} />;
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-zinc-500 font-mono text-xs uppercase tracking-widest animate-pulse">Loading Auth...</div>}>
+        <AuthModal onSuccess={(name) => setUsername(name)} />
+      </Suspense>
+    );
   }
 
   if (!currentTrack) return null;
@@ -313,7 +411,20 @@ export default function App() {
           }}
         />
       )}
-      {isTripMode && <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10" />}
+      {isTripMode && <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-5" />}
+
+      {/* ── Sketch-It Canvas ── */}
+      <Suspense fallback={null}>
+        {isJoined && (
+          <SketchCanvas 
+            onDraw={(data) => webrtcClient.send('drawing-data', data)} 
+            incomingStroke={incomingStroke} 
+            isTripMode={isTripMode}
+            enabled={isDoodling}
+            clearTrigger={clearSketchSignal}
+          />
+        )}
+      </Suspense>
 
       {/* Hidden Audio Element */}
       <audio ref={audioRef} crossOrigin="anonymous" />
@@ -322,7 +433,7 @@ export default function App() {
       {!isTripMode && (
         <button
           onClick={() => setIsDarkMode(!isDarkMode)}
-          className={`fixed top-5 left-5 z-50 p-2.5 rounded-full border shadow-sm transition-all duration-300 hover:scale-110 active:scale-95 ${
+          className={`fixed top-5 left-5 z-100 p-2.5 rounded-full border shadow-sm transition-all duration-300 hover:scale-110 active:scale-95 ${
             isDarkMode
               ? 'bg-zinc-800 border-zinc-700 text-zinc-100 hover:bg-zinc-700'
               : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'
@@ -333,17 +444,19 @@ export default function App() {
       )}
 
       {/* ── Floating Reactions Overlay ── */}
-      <AnimatePresence>
-        {activeReactions.map((r) => (
-          <FloatingReaction
-            key={r.id}
-            emoji={r.emoji}
-            startX={r.startX}
-            endX={r.endX}
-            onComplete={() => setActiveReactions((prev) => prev.filter((item) => item.id !== r.id))}
-          />
-        ))}
-      </AnimatePresence>
+      <Suspense fallback={null}>
+        <AnimatePresence>
+          {activeReactions.map((r) => (
+            <FloatingReaction
+              key={r.id}
+              emoji={r.emoji}
+              startX={r.startX}
+              endX={r.endX}
+              onComplete={() => setActiveReactions((prev) => prev.filter((item) => item.id !== r.id))}
+            />
+          ))}
+        </AnimatePresence>
+      </Suspense>
 
       {/* ── Chat Notifications ── */}
       <AnimatePresence>
@@ -353,7 +466,7 @@ export default function App() {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: -20, opacity: 0, scale: 0.95 }}
             onClick={() => { setIsChatOpen(true); setChatNotification(null); }}
-            className={`fixed top-16 right-5 z-60 cursor-pointer p-4 rounded-2xl shadow-2xl border backdrop-blur-3xl flex items-center space-x-4 max-w-[18rem] transition-all hover:scale-105 active:scale-95 ${
+            className={`fixed top-16 right-5 z-100 cursor-pointer p-4 rounded-2xl shadow-2xl border backdrop-blur-3xl flex items-center space-x-4 max-w-[18rem] transition-all hover:scale-105 active:scale-95 ${
               isTripMode 
                 ? 'bg-black/60 border-white/10 text-white' 
                 : 'bg-white/90 border-zinc-200 text-zinc-900'
@@ -375,52 +488,60 @@ export default function App() {
       </AnimatePresence>
 
       {/* ── Chat Panel Overlay ── */}
-      <AnimatePresence>
-        {isChatOpen && (
-          <ChatPanel
-            messages={messages}
-            username={username}
-            isTripMode={isTripMode}
-            onSendMessage={handleSendMessage}
-            onClose={() => setIsChatOpen(false)}
-          />
-        )}
-      </AnimatePresence>
+      <Suspense fallback={null}>
+        <AnimatePresence>
+          {isChatOpen && (
+            <ChatPanel
+              messages={messages}
+              username={username}
+              isTripMode={isTripMode}
+              onSendMessage={handleSendMessage}
+              onClose={() => setIsChatOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+      </Suspense>
 
       {/* ── Player Section ── */}
-      <section className="relative z-20 w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-500">
-        <PlayerSection
-          currentTrack={currentTrack}
-          isChatOpen={isChatOpen}
-          setIsChatOpen={setIsChatOpen}
-          progress={progress}
-          duration={duration}
-          isDragging={isDragging}
-          progressBarRef={progressBarRef}
-          handleMouseDown={handleMouseDown}
-          handleTouchStart={handleTouchStart}
-          formatTime={formatTime}
-          isPlaying={isPlaying}
-          isTripMode={isTripMode}
-          isDarkMode={isDarkMode}
-        />
+      <section className="relative w-full max-w-sm flex flex-col items-center mt-12 md:mt-24 space-y-10 transition-all duration-500">
+        <Suspense fallback={<div className="h-64 w-full flex items-center justify-center">Loading Player...</div>}>
+          <PlayerSection
+            currentTrack={currentTrack}
+            isChatOpen={isChatOpen}
+            setIsChatOpen={setIsChatOpen}
+            progress={progress}
+            duration={duration}
+            isDragging={isDragging}
+            progressBarRef={progressBarRef}
+            handleMouseDown={handleMouseDown}
+            handleTouchStart={handleTouchStart}
+            formatTime={formatTime}
+            isPlaying={isPlaying}
+            isTripMode={isTripMode}
+            isDarkMode={isDarkMode}
+          />
 
-        <JamSessionSection
-          isJoined={isJoined}
-          isTripMode={isTripMode}
-          setIsTripMode={setIsTripMode}
-          handleSendReaction={handleSendReaction}
-          handleCreateSession={handleCreateSession}
-          handleJoinSession={handleJoinSession}
-          joinId={joinId}
-          setJoinId={setJoinId}
-          isHost={isHost}
-          setIsChatOpen={setIsChatOpen}
-          handleLeaveSession={handleLeaveSession}
-          sessionId={sessionId}
-          participants={participants}
-          isDarkMode={isDarkMode}
-        />
+          <JamSessionSection
+            isJoined={isJoined}
+            isTripMode={isTripMode}
+            isDarkMode={isDarkMode}
+            setIsTripMode={setIsTripMode}
+            handleSendReaction={handleSendReaction}
+            handleCreateSession={handleCreateSession}
+            handleJoinSession={handleJoinSession}
+            joinId={joinId}
+            setJoinId={setJoinId}
+            isHost={isHost}
+            setIsChatOpen={setIsChatOpen}
+            handleLeaveSession={handleLeaveSession}
+            sessionId={sessionId}
+            participants={participants}
+            onSendNudge={handleSendNudge}
+            isDoodling={isDoodling}
+            setIsDoodling={setIsDoodling}
+            onClearSketch={handleClearSketch}
+          />
+        </Suspense>
 
         {/* ── Media Input (host only) ── */}
         {isJoined && isHost && (
@@ -428,22 +549,26 @@ export default function App() {
             <p className={`text-[10px] font-mono uppercase tracking-widest mb-3 ${isTripMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
               Load Media for Session
             </p>
-            <MediaInput onLoad={handleMediaLoad} isTripMode={isTripMode} />
+            <Suspense fallback={<div className="h-20" />}>
+              <MediaInput onLoad={handleMediaLoad} isTripMode={isTripMode} />
+            </Suspense>
           </div>
         )}
 
         {/* ── Shared Media Player ── */}
         {mediaUrl && (
           <div className="w-full">
-            <MediaPlayer
-              url={mediaUrl}
-              type={mediaType}
-              mediaState={mediaState}
-              mediaTime={mediaTime}
-              sessionId={sessionId}
-              isHost={isHost}
-              isTripMode={isTripMode}
-            />
+            <Suspense fallback={<div className="aspect-video w-full bg-black/10 rounded-2xl animate-pulse" />}>
+              <MediaPlayer
+                url={mediaUrl}
+                type={mediaType}
+                mediaState={mediaState}
+                mediaTime={mediaTime}
+                sessionId={sessionId}
+                isHost={isHost}
+                isTripMode={isTripMode}
+              />
+            </Suspense>
           </div>
         )}
       </section>
@@ -458,6 +583,78 @@ export default function App() {
           ))}
         </p>
       </footer>
+
+      {/* ── Nudge Visual (Bloom) ── */}
+      <AnimatePresence>
+        {nudgeVisual && !isPerfectSync && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1.5 }}
+            exit={{ opacity: 0, scale: 2 }}
+            className="fixed inset-0 z-100 pointer-events-none flex items-center justify-center"
+          >
+            <div className={`w-64 h-64 rounded-full blur-[100px] ${isTripMode ? 'bg-white/30' : 'bg-rose-500/25'}`} />
+            <motion.div 
+              initial={{ scale: 0, rotate: -15 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", damping: 12 }}
+              className="absolute"
+            >
+              <Heart className={`w-16 h-16 fill-current drop-shadow-2xl ${isTripMode ? 'text-white' : 'text-rose-500'}`} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Perfect Sync Visual (Golden Aura) ── */}
+      <AnimatePresence>
+        {isPerfectSync && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-110 pointer-events-none flex items-center justify-center overflow-hidden"
+          >
+            {/* Massive Gold Glow */}
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: [1, 2, 1.5], opacity: [0.5, 0.8, 0.6] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="absolute w-screen h-screen rounded-full bg-gradient-radial from-amber-400/40 via-yellow-500/10 to-transparent blur-[120px]"
+            />
+            
+            {/* Spinning Aura Rings */}
+            {[...Array(3)].map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ rotate: 0, scale: 0.8, opacity: 0 }}
+                animate={{ rotate: 360, scale: 1.2, opacity: 1 }}
+                transition={{ duration: 3, delay: i * 0.5, repeat: Infinity, ease: "linear" }}
+                className="absolute w-80 h-80 rounded-full border border-amber-400/30 border-dashed"
+              />
+            ))}
+
+            {/* Main Sync Heart */}
+            <motion.div
+              initial={{ scale: 0, y: 50 }}
+              animate={{ scale: [1, 1.2, 1], y: 0 }}
+              transition={{ type: "spring", bounce: 0.6 }}
+              className="relative flex flex-col items-center"
+            >
+              <div className="absolute inset-0 blur-2xl bg-amber-500/50 rounded-full scale-150" />
+              <Heart className="w-32 h-32 text-amber-400 fill-amber-400 drop-shadow-[0_0_30px_rgba(251,191,36,0.8)]" />
+              <motion.span
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="mt-6 text-amber-200 font-mono text-xs font-black uppercase tracking-[0.4em] drop-shadow-md"
+              >
+                Perfect Sync
+              </motion.span>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

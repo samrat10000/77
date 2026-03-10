@@ -1,5 +1,5 @@
 export const BACKEND_URL =
-  import.meta.env.VITE_SOCKET_URL || "http://192.168.0.146:3001";
+  import.meta.env.VITE_SOCKET_URL || "http://192.168.0.152:3001";
 export const LS_TOKEN = "jam_token";
 export const LS_USERNAME = "jam_username";
 export const LS_SESSION = "jam_session_id";

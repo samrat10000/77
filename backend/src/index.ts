@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import compression from 'compression';
 import { connectDB } from './config/db';
 import authRoutes from './routes/authRoutes';
 import { setupJamSessionSockets } from './sockets/jamSession';
@@ -14,6 +15,7 @@ const app = express();
 const port = Number(process.env.PORT) || 3001;
 
 // ─── Middleware ───────────────────────────────────────────────────────
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 

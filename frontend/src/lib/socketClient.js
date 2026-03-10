@@ -2,11 +2,27 @@ import { io } from "socket.io-client";
 
 class SocketClient {
   constructor() {
-    this.socket = null;
+    this.socket = io(this.getUrl(), {
+      transports: ["websocket"],
+      autoConnect: false,
+      reconnection: true,
+    });
+
+    this.socket.on("connect", () => {
+      console.log("✅ Socket connected:", this.socket.id);
+    });
+
+    this.socket.on("disconnect", (reason) => {
+      console.log("❌ Socket disconnected:", reason);
+    });
+
+    this.socket.on("connect_error", (err) => {
+      console.error("⚠️ Socket error:", err.message);
+    });
   }
 
   getUrl() {
-    return import.meta.env.VITE_SOCKET_URL || "http://192.168.0.146:3001";
+    return import.meta.env.VITE_SOCKET_URL || "http://192.168.0.152:3001";
   }
 
   static getInstance() {
@@ -17,28 +33,8 @@ class SocketClient {
   }
 
   connect() {
-    if (!this.socket || !this.socket.connected) {
-      if (!this.socket) {
-        this.socket = io(this.getUrl(), {
-          transports: ["websocket"],
-          autoConnect: true,
-          reconnection: true,
-        });
-
-        this.socket.on("connect", () => {
-          console.log("✅ Socket connected:", this.socket.id);
-        });
-
-        this.socket.on("disconnect", (reason) => {
-          console.log("❌ Socket disconnected:", reason);
-        });
-
-        this.socket.on("connect_error", (err) => {
-          console.error("⚠️ Socket error:", err.message);
-        });
-      } else {
-        this.socket.connect();
-      }
+    if (!this.socket.connected) {
+      this.socket.connect();
     }
     return this.socket;
   }

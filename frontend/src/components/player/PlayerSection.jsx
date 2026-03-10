@@ -29,7 +29,7 @@ export function PlayerSection({
         <div className={`w-full h-full flex items-center justify-center overflow-hidden relative bg-zinc-100`}>
           <button 
             onClick={() => setIsChatOpen(!isChatOpen)}
-            className={`absolute top-4 right-4 z-30 p-2 rounded-full backdrop-blur shadow-sm hover:scale-110 transition-all bg-white/80 text-zinc-900`}
+            className={`absolute top-4 right-4 z-100 p-2 rounded-full backdrop-blur shadow-sm hover:scale-110 transition-all bg-white/80 text-zinc-900`}
           >
             <Share2 className="w-4 h-4 rotate-90" />
           </button>
@@ -49,7 +49,7 @@ export function PlayerSection({
         </div>
       </div>
 
-      <div className="w-full flex flex-col">
+      <div className="w-full space-y-3 select-none">
         <div className="mb-6">
           <h1 className={`text-3xl font-serif font-bold tracking-tight truncate transition-colors duration-300 ${dark ? 'text-red-950/70' : 'text-zinc-900'}`} title={currentTrack.title}>
             {currentTrack.title}
@@ -59,7 +59,7 @@ export function PlayerSection({
           </p>
         </div>
 
-        <div className="w-full space-y-3 select-none">
+      <div className="w-full space-y-3 select-none">
           <div
             ref={progressBarRef}
             className="w-full relative cursor-pointer group py-3 flex items-center"
@@ -83,7 +83,7 @@ export function PlayerSection({
           </div>
         </div>
 
-        <div className="flex items-center justify-between mt-6 px-2">
+        <div className="flex items-center justify-between mt-6 px-2 relative z-100">
           <button className={`transition-colors ${dark ? 'text-zinc-600 hover:text-zinc-200' : 'text-zinc-400 hover:text-zinc-800'}`}>
             <Shuffle className="w-4 h-4" />
           </button>

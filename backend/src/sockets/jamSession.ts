@@ -91,58 +91,20 @@ export const setupJamSessionSockets = (io: Server) => {
       console.log(`${username} (${socket.id}) rejoined session ${sessionId}`);
     });
 
-    socket.on('chat-message', ({ sessionId, text, username }: { sessionId: string; text: string; username: string }) => {
-      if (sessions[sessionId]) {
-        io.to(sessionId).emit('chat-message', {
-          username,
-          text,
-          timestamp: Date.now(),
-          type: 'user'
-        });
-      }
+    // ── WebRTC DataChannels now handle Chat, Reactions, Playback, and Media Sync ──
+
+    // ── WebRTC Signaling (Relay) ─────────────────────────────────────────
+
+    socket.on('webrtc-offer', ({ targetSocketId, offer, senderUsername }: { targetSocketId: string; offer: object; senderUsername: string }) => {
+      io.to(targetSocketId).emit('webrtc-offer', { senderSocketId: socket.id, offer, senderUsername });
     });
 
-    socket.on('send-reaction', ({ sessionId, emoji }: { sessionId: string; emoji: string }) => {
-      if (sessions[sessionId]) {
-        io.to(sessionId).emit('new-reaction', {
-          emoji,
-          id: Math.random().toString(36).substring(7)
-        });
-      }
+    socket.on('webrtc-answer', ({ targetSocketId, answer }: { targetSocketId: string; answer: object }) => {
+      io.to(targetSocketId).emit('webrtc-answer', { senderSocketId: socket.id, answer });
     });
 
-    socket.on('playback-sync', ({ sessionId, state }: { sessionId: string; state: Partial<PlaybackState> }) => {
-      if (sessions[sessionId]) {
-        sessions[sessionId] = { ...sessions[sessionId], ...state, lastUpdated: Date.now() };
-        socket.to(sessionId).emit('playback-update', state);
-      }
-    });
-
-    // ── Media events (host only) ──────────────────────────────────────────
-
-    socket.on('media:load', ({ sessionId, url, type }: { sessionId: string; url: string; type: 'youtube' | 'video' | 'audio' }) => {
-      const session = sessions[sessionId];
-      if (!session) return;
-      const sender = session.participants.find(p => p.socketId === socket.id);
-      if (!sender || sender.username !== session.hostUsername) return; // host only
-      session.media = { url, type };
-      io.to(sessionId).emit('media:load', { url, type });
-    });
-
-    socket.on('media:sync', ({ sessionId, time, state }: { sessionId: string; time: number; state: 'playing' | 'paused' }) => {
-      const session = sessions[sessionId];
-      if (!session) return;
-      const sender = session.participants.find(p => p.socketId === socket.id);
-      if (!sender || sender.username !== session.hostUsername) return;
-      socket.to(sessionId).emit('media:sync', { time, state });
-    });
-
-    socket.on('media:seek', ({ sessionId, time }: { sessionId: string; time: number }) => {
-      const session = sessions[sessionId];
-      if (!session) return;
-      const sender = session.participants.find(p => p.socketId === socket.id);
-      if (!sender || sender.username !== session.hostUsername) return;
-      socket.to(sessionId).emit('media:seek', { time });
+    socket.on('webrtc-ice-candidate', ({ targetSocketId, candidate }: { targetSocketId: string; candidate: object }) => {
+      io.to(targetSocketId).emit('webrtc-ice-candidate', { senderSocketId: socket.id, candidate });
     });
 
     socket.on('disconnect', () => {
